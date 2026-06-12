@@ -1,4 +1,4 @@
-const CACHE = "scontrini-v5";
+const CACHE = "scontrini-v6";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -14,9 +14,22 @@ self.addEventListener("activate", (e) => {
   );
 });
 
-// App shell dalla cache; le chiamate API (POST) non passano di qui
+// Pagina principale: prima la rete (così gli aggiornamenti arrivano subito),
+// cache solo come ripiego offline. no-cache scavalca anche la cache HTTP del
+// CDN di GitHub Pages. Il resto della shell resta cache-first; le chiamate
+// API (POST) non passano di qui.
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  if (e.request.mode === "navigate"){
+    e.respondWith(
+      fetch(e.request, { cache: "no-cache" }).then((r) => {
+        const copia = r.clone();
+        caches.open(CACHE).then((c) => c.put("./index.html", copia));
+        return r;
+      }).catch(() => caches.match("./index.html"))
+    );
+    return;
+  }
   e.respondWith(
     caches.match(e.request).then((r) => r || fetch(e.request))
   );
