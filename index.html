@@ -1,0 +1,773 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1B5E20">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Scontrini</title>
+<style>
+  :root{
+    --verde:#1B5E20; --verde-chiaro:#2E7D32; --sfondo:#F4F6F4;
+    --carta:#FFFFFF; --testo:#1A1A1A; --grigio:#757575; --rosso:#C62828;
+  }
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  body{
+    font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    background:var(--sfondo); color:var(--testo); min-height:100vh;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  header{
+    background:var(--verde); color:#fff; padding:14px 16px;
+    display:flex; align-items:center; justify-content:space-between;
+    position:sticky; top:0; z-index:10;
+  }
+  header h1{ font-size:1.15rem; font-weight:600; cursor:pointer; }
+  header button{
+    background:none; border:none; color:#fff; font-size:1.3rem; cursor:pointer; padding:4px 8px;
+  }
+  main{ max-width:520px; margin:0 auto; padding:16px; }
+  .card{
+    background:var(--carta); border-radius:14px; padding:18px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08); margin-bottom:16px;
+  }
+  h2{ font-size:1.02rem; margin-bottom:10px; }
+  .btn{
+    display:block; width:100%; padding:15px; border:none; border-radius:12px;
+    font-size:1.05rem; font-weight:600; cursor:pointer; text-align:center;
+  }
+  .btn-primario{ background:var(--verde); color:#fff; }
+  .btn-secondario{ background:#E8F0E8; color:var(--verde); margin-top:10px; }
+  .btn:disabled{ opacity:.5; }
+  label{ display:block; font-size:.82rem; color:var(--grigio); margin:12px 0 4px; font-weight:600; }
+  input,select,textarea{
+    width:100%; padding:11px 12px; border:1px solid #D5D9D5; border-radius:10px;
+    font-size:1rem; background:#fff; font-family:inherit;
+  }
+  textarea{ resize:vertical; min-height:60px; }
+  .anteprima{ width:100%; border-radius:10px; max-height:260px; object-fit:contain; background:#EEE; }
+  .spinner{
+    margin:30px auto; width:42px; height:42px; border:4px solid #DDE5DD;
+    border-top-color:var(--verde); border-radius:50%; animation:gira .8s linear infinite;
+  }
+  .spinner-mini{
+    display:inline-block; width:18px; height:18px; border:3px solid #DDE5DD;
+    border-top-color:var(--verde); border-radius:50%; animation:gira .8s linear infinite;
+    vertical-align:middle;
+  }
+  @keyframes gira{ to{ transform:rotate(360deg);} }
+  .centro{ text-align:center; color:var(--grigio); }
+  .errore{ color:var(--rosso); font-size:.9rem; margin-top:10px; text-align:center; }
+  .ok-banner{
+    background:#E6F4E6; color:var(--verde); border-radius:12px; padding:14px;
+    text-align:center; font-weight:600; margin-bottom:16px;
+  }
+  .badge-ai{
+    display:inline-block; background:#FFF3CD; color:#7A5A00; font-size:.72rem;
+    padding:3px 8px; border-radius:99px; font-weight:600; margin-left:6px; vertical-align:middle;
+  }
+  .nascosto{ display:none !important; }
+  .riga-doppia{ display:flex; gap:10px; }
+  .riga-doppia > div{ flex:1; }
+  .mini-foto{ width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid #DDD; }
+  .voce-lista{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:11px 4px; border-bottom:1px solid #EEE; gap:8px;
+  }
+  .voce-lista:last-child{ border-bottom:none; }
+  .voce-lista .vl-info{ min-width:0; }
+  .voce-lista .vl-negozio{ font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .voce-lista .vl-sub{ font-size:.78rem; color:var(--grigio); }
+  .voce-lista .vl-tot{ font-weight:700; white-space:nowrap; }
+  .voce-lista a{ color:var(--verde); font-weight:600; text-decoration:none; white-space:nowrap; }
+  #canvasEdit{ width:100%; border-radius:10px; background:#EEE; max-height:55vh; object-fit:contain; }
+  .toggle-riga{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; }
+  .toggle-riga span{ font-weight:600; font-size:.95rem; }
+  input[type="checkbox"]{ width:22px; height:22px; accent-color:var(--verde); }
+  input[type="range"]{ padding:0; accent-color:var(--verde); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1 id="btnHome">📋 Scontrini</h1>
+  <button id="btnImpostazioni" title="Impostazioni">⚙️</button>
+</header>
+
+<main>
+
+  <!-- ======== IMPOSTAZIONI ======== -->
+  <section id="vistaImpostazioni" class="card nascosto">
+    <h2>Impostazioni</h2>
+    <p class="centro" style="font-size:.85rem">Incolla l'URL della Web App di Apps Script e il token.</p>
+    <label>URL Web App</label>
+    <input id="cfgUrl" type="url" placeholder="https://script.google.com/macros/s/.../exec">
+    <label>Token API</label>
+    <input id="cfgToken" type="password" placeholder="token segreto">
+    <div style="margin-top:16px">
+      <button class="btn btn-primario" id="btnSalvaCfg">Salva e verifica</button>
+    </div>
+    <p id="cfgEsito" class="centro" style="margin-top:10px"></p>
+  </section>
+
+  <!-- ======== HOME ======== -->
+  <section id="vistaHome">
+    <div id="bannerOk" class="ok-banner nascosto"></div>
+    <div class="card">
+      <h2>➕ Nuova spesa</h2>
+      <button class="btn btn-primario" id="btnFoto">📷 Scatta foto scontrino</button>
+      <button class="btn btn-secondario" id="btnPdf">📄 Carica PDF (fattura/ricevuta)</button>
+    </div>
+    <div class="card">
+      <h2>🔍 Cerca spese</h2>
+      <button class="btn btn-secondario" id="btnVaiCerca" style="margin-top:0">Apri ricerca</button>
+    </div>
+    <div class="card">
+      <h2>📊 Chiusura mese</h2>
+      <button class="btn btn-secondario" id="btnVaiMese" style="margin-top:0">Riepiloghi e stampa PDF</button>
+    </div>
+    <input id="inputFoto" class="nascosto" type="file" accept="image/*" capture="environment">
+    <input id="inputPdf" class="nascosto" type="file" accept="application/pdf">
+  </section>
+
+  <!-- ======== EDITOR FOTO (scansione B/N) ======== -->
+  <section id="vistaEditor" class="card nascosto">
+    <h2>Anteprima scansione</h2>
+    <canvas id="canvasEdit"></canvas>
+    <div class="toggle-riga" id="rigaCrop">
+      <span>Ritaglio automatico</span>
+      <input type="checkbox" id="toggleCrop" checked>
+    </div>
+    <div class="toggle-riga">
+      <span>Scansione B/N</span>
+      <input type="checkbox" id="toggleBN" checked>
+    </div>
+    <div id="boxContrasto">
+      <label>Contrasto: pulisce lo sfondo ⟷ recupera testo sbiadito</label>
+      <input type="range" id="sliderBN" min="5" max="30" value="15">
+    </div>
+    <div style="margin-top:16px">
+      <button class="btn btn-primario" id="btnUsaFoto">✓ Usa questa immagine</button>
+      <button class="btn btn-secondario" id="btnAnnullaEditor">Annulla</button>
+    </div>
+  </section>
+
+  <!-- ======== ANALISI IN CORSO ======== -->
+  <section id="vistaAnalisi" class="card nascosto">
+    <div class="spinner"></div>
+    <p class="centro">L'AI sta leggendo lo scontrino…</p>
+  </section>
+
+  <!-- ======== FORM CONFERMA ======== -->
+  <section id="vistaForm" class="card nascosto">
+    <img id="fotoAnteprima" class="anteprima nascosto" alt="anteprima scontrino">
+    <p id="etichettaPdf" class="centro nascosto" style="margin-top:6px">📄 PDF allegato — i dati verranno estratti dall'AI dopo il salvataggio</p>
+    <span id="badgeAi" class="badge-ai nascosto">✨ compilato dall'AI — verifica</span>
+
+    <div class="riga-doppia">
+      <div>
+        <label>Data (GG/MM/AAAA)</label>
+        <input id="fData" type="text" inputmode="numeric" placeholder="12/06/2026">
+      </div>
+      <div>
+        <label>Totale</label>
+        <input id="fTotale" type="text" inputmode="decimal" placeholder="€ 12,34">
+      </div>
+    </div>
+
+    <label>Negozio</label>
+    <input id="fNegozio" type="text" placeholder="Nome esercizio">
+
+    <label>Categoria</label>
+    <select id="fCategoria">
+      <option>Ristoranti</option>
+      <option>Trasporti</option>
+      <option>Pernottamenti</option>
+      <option selected>Altro</option>
+    </select>
+
+    <div class="riga-doppia">
+      <div>
+        <label>Ospiti interni</label>
+        <input id="fOspInt" type="text" placeholder="nomi…">
+      </div>
+      <div>
+        <label>Ospiti esterni</label>
+        <input id="fOspEst" type="text" placeholder="nomi…">
+      </div>
+    </div>
+
+    <label>Note</label>
+    <textarea id="fNote" placeholder="facoltative"></textarea>
+
+    <label>Foto pagamento (bancomat) — facoltativa</label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn btn-secondario" id="btnBancomat" style="margin-top:0;flex:1">💳 Aggiungi foto</button>
+      <img id="bancomatAnteprima" class="mini-foto nascosto" alt="foto bancomat">
+    </div>
+    <input id="inputBancomat" class="nascosto" type="file" accept="image/*" capture="environment">
+
+    <div style="margin-top:18px">
+      <button class="btn btn-primario" id="btnSalva">💾 Salva spesa</button>
+      <button class="btn btn-secondario" id="btnAnnulla">Annulla</button>
+    </div>
+    <p id="formErrore" class="errore nascosto"></p>
+  </section>
+
+  <!-- ======== RICERCA ======== -->
+  <section id="vistaCerca" class="nascosto">
+    <div class="card">
+      <h2>🔍 Cerca spese</h2>
+      <label>Testo (negozio, categoria, note)</label>
+      <input id="cercaQuery" type="search" placeholder="es. hotel, taxi, Rossi…">
+      <label>Mese (facoltativo)</label>
+      <input id="cercaMese" type="month">
+      <div style="margin-top:14px">
+        <button class="btn btn-primario" id="btnCerca">Cerca</button>
+        <button class="btn btn-secondario" id="btnIndietroCerca">← Home</button>
+      </div>
+    </div>
+    <div class="card nascosto" id="cardRisultati">
+      <h2 id="risultatiTitolo">Risultati</h2>
+      <div id="listaRisultati"></div>
+    </div>
+  </section>
+
+  <!-- ======== CHIUSURA MESE ======== -->
+  <section id="vistaMese" class="nascosto">
+    <div class="card">
+      <h2>📊 Genera riepilogo mensile</h2>
+      <p class="centro" style="font-size:.83rem">Crea il PDF con tabella, immagini e totali per categoria. Può richiedere fino a un minuto.</p>
+      <div class="riga-doppia">
+        <div>
+          <label>Mese</label>
+          <select id="meseSel"></select>
+        </div>
+        <div>
+          <label>Anno</label>
+          <select id="annoSel"></select>
+        </div>
+      </div>
+      <div style="margin-top:14px">
+        <button class="btn btn-primario" id="btnChiudiMese">🖨️ Genera PDF riepilogo</button>
+        <button class="btn btn-secondario" id="btnIndietroMese">← Home</button>
+      </div>
+      <p id="meseEsito" class="centro" style="margin-top:12px"></p>
+    </div>
+    <div class="card">
+      <h2>🗂️ Riepiloghi generati</h2>
+      <div id="listaRiepiloghi"><p class="centro"><span class="spinner-mini"></span> caricamento…</p></div>
+    </div>
+  </section>
+
+</main>
+
+<script>
+"use strict";
+
+// ---------- configurazione ----------
+const cfg = {
+  get url(){ return localStorage.getItem("gs_url") || ""; },
+  set url(v){ localStorage.setItem("gs_url", v); },
+  get token(){ return localStorage.getItem("gs_token") || ""; },
+  set token(v){ localStorage.setItem("gs_token", v); }
+};
+
+// ---------- stato corrente ----------
+let stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+
+// dati dell'editor foto
+let editor = { canvasFull: null, crop: null };
+
+// ---------- riferimenti DOM ----------
+const $ = (id) => document.getElementById(id);
+const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaCerca", "vistaMese", "vistaImpostazioni"];
+function mostra(vista){
+  viste.forEach(v => $(v).classList.toggle("nascosto", v !== vista));
+}
+
+// ---------- chiamate API ----------
+// POST senza Content-Type custom: evita il preflight CORS (pattern Apps Script)
+async function api(body){
+  if (!cfg.url) throw new Error("Configura prima l'URL nelle impostazioni ⚙️");
+  body.token = cfg.token;
+  const resp = await fetch(cfg.url, { method: "POST", body: JSON.stringify(body) });
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  return resp.json();
+}
+
+// ---------- caricamento e ridimensionamento immagini ----------
+function caricaImmagine(file, maxLato = 1600){
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const scala = Math.min(maxLato / Math.max(img.width, img.height), 1);
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scala);
+      canvas.height = Math.round(img.height * scala);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(img.src);
+      resolve(canvas);
+    };
+    img.onerror = () => reject(new Error("Immagine non leggibile"));
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+function fileInBase64(file){
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1]);
+    r.onerror = () => reject(new Error("File non leggibile"));
+    r.readAsDataURL(file);
+  });
+}
+
+// ---------- scansione B/N (binarizzazione adattiva di Bradley) ----------
+// Per ogni pixel confronta la luminosità con la media della zona circostante
+// (calcolata in O(1) tramite immagine integrale): il testo resta nero netto,
+// lo sfondo — anche se ingiallito o in ombra — diventa bianco.
+function applicaScansioneBN(imageData, w, h, sensibilita){
+  const d = imageData.data;
+  const grigio = new Uint8ClampedArray(w * h);
+  for (let i = 0; i < w * h; i++){
+    grigio[i] = d[i*4]*0.299 + d[i*4+1]*0.587 + d[i*4+2]*0.114;
+  }
+  const integ = new Float64Array((w+1) * (h+1));
+  for (let y = 0; y < h; y++){
+    let sommaRiga = 0;
+    for (let x = 0; x < w; x++){
+      sommaRiga += grigio[y*w + x];
+      integ[(y+1)*(w+1) + (x+1)] = integ[y*(w+1) + (x+1)] + sommaRiga;
+    }
+  }
+  const s = Math.max(16, Math.floor(Math.min(w, h) / 12));  // raggio finestra
+  for (let y = 0; y < h; y++){
+    const y1 = Math.max(0, y-s), y2 = Math.min(h-1, y+s);
+    for (let x = 0; x < w; x++){
+      const x1 = Math.max(0, x-s), x2 = Math.min(w-1, x+s);
+      const n = (x2-x1+1) * (y2-y1+1);
+      const somma = integ[(y2+1)*(w+1)+(x2+1)] - integ[y1*(w+1)+(x2+1)]
+                  - integ[(y2+1)*(w+1)+x1]     + integ[y1*(w+1)+x1];
+      const v = (grigio[y*w+x] * n) < somma * (1 - sensibilita) ? 0 : 255;
+      const i4 = (y*w + x) * 4;
+      d[i4] = d[i4+1] = d[i4+2] = v;
+    }
+  }
+  return imageData;
+}
+
+// ---------- ritaglio automatico (rileva il foglio chiaro nell'inquadratura) ----------
+// Lavora su una copia ridotta: separa carta e sfondo con la soglia di Otsu
+// (pixel chiari e poco saturi = carta), trova la regione connessa più grande
+// e ne restituisce il bounding box in coordinate dell'immagine piena.
+// Restituisce null se il foglio riempie già l'inquadratura o non è riconoscibile.
+function rilevaRitaglio(canvas){
+  const w = 200, h = Math.max(1, Math.round(canvas.height * 200 / canvas.width));
+  const piccolo = document.createElement("canvas");
+  piccolo.width = w; piccolo.height = h;
+  const ctx = piccolo.getContext("2d");
+  ctx.drawImage(canvas, 0, 0, w, h);
+  const d = ctx.getImageData(0, 0, w, h).data;
+  const tot = w * h;
+
+  // luminanza + istogramma
+  const lum = new Uint8ClampedArray(tot);
+  const hist = new Array(256).fill(0);
+  for (let i = 0; i < tot; i++){
+    const v = Math.round(d[i*4]*0.299 + d[i*4+1]*0.587 + d[i*4+2]*0.114);
+    lum[i] = v;
+    hist[v]++;
+  }
+
+  // soglia di Otsu (massimizza la varianza tra le due classi carta/sfondo)
+  let sommaTot = 0;
+  for (let v = 0; v < 256; v++) sommaTot += v * hist[v];
+  let sommaB = 0, pesoB = 0, maxVar = 0, soglia = 127;
+  for (let v = 0; v < 256; v++){
+    pesoB += hist[v];
+    if (!pesoB) continue;
+    const pesoF = tot - pesoB;
+    if (!pesoF) break;
+    sommaB += v * hist[v];
+    const mB = sommaB / pesoB, mF = (sommaTot - sommaB) / pesoF;
+    const varTra = pesoB * pesoF * (mB - mF) * (mB - mF);
+    if (varTra > maxVar){ maxVar = varTra; soglia = v; }
+  }
+
+  // maschera "carta": chiara e poco satura
+  const mask = new Uint8Array(tot);
+  for (let i = 0; i < tot; i++){
+    const sat = Math.max(d[i*4], d[i*4+1], d[i*4+2]) - Math.min(d[i*4], d[i*4+1], d[i*4+2]);
+    mask[i] = (lum[i] > soglia && sat < 80) ? 1 : 0;
+  }
+
+  // regione connessa più grande (BFS, 4-connettività)
+  const visitato = new Uint8Array(tot);
+  const coda = new Int32Array(tot);
+  let migliore = null;
+  for (let inizio = 0; inizio < tot; inizio++){
+    if (!mask[inizio] || visitato[inizio]) continue;
+    let testa = 0, fine = 0, count = 0;
+    let minX = w, maxX = 0, minY = h, maxY = 0;
+    coda[fine++] = inizio;
+    visitato[inizio] = 1;
+    while (testa < fine){
+      const p = coda[testa++];
+      count++;
+      const px = p % w, py = (p / w) | 0;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+      if (px > 0   && mask[p-1] && !visitato[p-1]){ visitato[p-1] = 1; coda[fine++] = p-1; }
+      if (px < w-1 && mask[p+1] && !visitato[p+1]){ visitato[p+1] = 1; coda[fine++] = p+1; }
+      if (py > 0   && mask[p-w] && !visitato[p-w]){ visitato[p-w] = 1; coda[fine++] = p-w; }
+      if (py < h-1 && mask[p+w] && !visitato[p+w]){ visitato[p+w] = 1; coda[fine++] = p+w; }
+    }
+    if (!migliore || count > migliore.count){
+      migliore = { count, minX, maxX, minY, maxY };
+    }
+  }
+
+  if (!migliore || migliore.count < tot * 0.10) return null;   // foglio non riconosciuto
+
+  // margine 2% attorno al riquadro
+  const margine = Math.round(w * 0.02);
+  const x1 = Math.max(0, migliore.minX - margine), y1 = Math.max(0, migliore.minY - margine);
+  const x2 = Math.min(w-1, migliore.maxX + margine), y2 = Math.min(h-1, migliore.maxY + margine);
+  if ((x2-x1+1) * (y2-y1+1) > tot * 0.93) return null;         // occupa già quasi tutto
+
+  // riporta alle coordinate dell'immagine piena
+  const f = canvas.width / w;
+  const X = Math.round(x1 * f), Y = Math.round(y1 * f);
+  return {
+    x: X,
+    y: Y,
+    w: Math.min(canvas.width  - X, Math.round((x2 - x1 + 1) * f)),
+    h: Math.min(canvas.height - Y, Math.round((y2 - y1 + 1) * f))
+  };
+}
+
+function aggiornaAnteprimaEditor(){
+  const cv = $("canvasEdit");
+  const ctx = cv.getContext("2d");
+  const usaCrop = editor.crop && $("toggleCrop").checked;
+  const r = usaCrop ? editor.crop
+                    : { x: 0, y: 0, w: editor.canvasFull.width, h: editor.canvasFull.height };
+  cv.width = r.w;
+  cv.height = r.h;
+  ctx.drawImage(editor.canvasFull, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+  if ($("toggleBN").checked){
+    const img = ctx.getImageData(0, 0, r.w, r.h);
+    applicaScansioneBN(img, r.w, r.h, $("sliderBN").value / 100);
+    ctx.putImageData(img, 0, 0);
+  }
+  $("boxContrasto").classList.toggle("nascosto", !$("toggleBN").checked);
+}
+
+// ---------- flusso foto: scatto → editor → AI → form ----------
+$("btnFoto").onclick = () => $("inputFoto").click();
+
+$("inputFoto").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    editor.canvasFull = await caricaImmagine(file);
+    editor.crop = rilevaRitaglio(editor.canvasFull);
+    // la riga "Ritaglio automatico" compare solo se un riquadro è stato trovato
+    $("rigaCrop").classList.toggle("nascosto", !editor.crop);
+    $("toggleCrop").checked = true;
+    $("toggleBN").checked = true;
+    $("sliderBN").value = 15;
+    aggiornaAnteprimaEditor();
+    mostra("vistaEditor");
+  } catch (err) {
+    alert("Errore: " + err.message);
+  }
+};
+
+$("toggleCrop").onchange = aggiornaAnteprimaEditor;
+$("toggleBN").onchange = aggiornaAnteprimaEditor;
+let timerSlider = null;
+$("sliderBN").oninput = () => {
+  clearTimeout(timerSlider);
+  timerSlider = setTimeout(aggiornaAnteprimaEditor, 120);
+};
+
+$("btnAnnullaEditor").onclick = () => mostra("vistaHome");
+
+$("btnUsaFoto").onclick = async () => {
+  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+  // l'immagine scelta (B/N o originale) è quella già sul canvas
+  const qualita = $("toggleBN").checked ? 0.92 : 0.85;  // il B/N comprime benissimo
+  stato.fotoB64 = $("canvasEdit").toDataURL("image/jpeg", qualita).split(",")[1];
+  $("fotoAnteprima").src = "data:image/jpeg;base64," + stato.fotoB64;
+  $("fotoAnteprima").classList.remove("nascosto");
+  $("etichettaPdf").classList.add("nascosto");
+
+  mostra("vistaAnalisi");
+  let dati = null;
+  try {
+    const r = await api({ action: "analizza", foto: stato.fotoB64, fotoMime: "image/jpeg" });
+    if (r.ok) dati = r.dati;
+  } catch (errAi) { /* analisi fallita: si compila a mano */ }
+
+  preparaForm(dati);
+  mostra("vistaForm");
+};
+
+// ---------- flusso PDF ----------
+$("btnPdf").onclick = () => $("inputPdf").click();
+
+$("inputPdf").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+  try {
+    stato.pdfB64 = await fileInBase64(file);
+    $("fotoAnteprima").classList.add("nascosto");
+    $("etichettaPdf").classList.remove("nascosto");
+    preparaForm(null);
+    mostra("vistaForm");
+  } catch (err) {
+    alert("Errore: " + err.message);
+  }
+};
+
+// ---------- form ----------
+function preparaForm(dati){
+  $("badgeAi").classList.toggle("nascosto", !dati);
+  $("fData").value = dati?.data || "";
+  $("fTotale").value = dati?.totale || "";
+  $("fNegozio").value = dati?.negozio || "";
+  $("fCategoria").value = dati?.categoria || "Altro";
+  $("fOspInt").value = "";
+  $("fOspEst").value = "";
+  $("fNote").value = "";
+  stato.testoAi = dati?.testo || "";
+  $("bancomatAnteprima").classList.add("nascosto");
+  $("formErrore").classList.add("nascosto");
+}
+
+$("btnBancomat").onclick = () => $("inputBancomat").click();
+
+$("inputBancomat").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const canvas = await caricaImmagine(file);
+  stato.bancomatB64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+  const mini = $("bancomatAnteprima");
+  mini.src = "data:image/jpeg;base64," + stato.bancomatB64;
+  mini.classList.remove("nascosto");
+};
+
+$("btnAnnulla").onclick = () => mostra("vistaHome");
+
+$("btnSalva").onclick = async () => {
+  const btn = $("btnSalva");
+  btn.disabled = true;
+  $("formErrore").classList.add("nascosto");
+  try {
+    const r = await api({
+      action: "salva",
+      foto: stato.fotoB64,
+      fotoMime: "image/jpeg",
+      pdf: stato.pdfB64,
+      fotoBancomat: stato.bancomatB64,
+      fotoBancomatMime: "image/jpeg",
+      data: $("fData").value,
+      totale: $("fTotale").value,
+      negozio: $("fNegozio").value,
+      categoria: $("fCategoria").value,
+      ospitiInterni: $("fOspInt").value,
+      ospitiEsterni: $("fOspEst").value,
+      note: $("fNote").value,
+      testo: stato.testoAi
+    });
+    if (!r.ok) throw new Error(r.errore || "Salvataggio fallito");
+    const banner = $("bannerOk");
+    banner.textContent = "✅ Spesa salvata (riga " + r.riga + ")";
+    banner.classList.remove("nascosto");
+    setTimeout(() => banner.classList.add("nascosto"), 5000);
+    mostra("vistaHome");
+  } catch (err) {
+    const el = $("formErrore");
+    el.textContent = err.message;
+    el.classList.remove("nascosto");
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+// ---------- ricerca ----------
+$("btnVaiCerca").onclick = () => {
+  $("cardRisultati").classList.add("nascosto");
+  mostra("vistaCerca");
+};
+$("btnIndietroCerca").onclick = () => mostra("vistaHome");
+
+$("btnCerca").onclick = async () => {
+  const btn = $("btnCerca");
+  btn.disabled = true;
+  btn.textContent = "Ricerca in corso…";
+  try {
+    const periodo = $("cercaMese").value;  // formato "YYYY-MM" nativo dell'input month
+    const r = await api({ action: "cerca", query: $("cercaQuery").value, periodo: periodo });
+    if (!r.ok) throw new Error(r.errore || "Ricerca fallita");
+    const lista = $("listaRisultati");
+    lista.innerHTML = "";
+    $("risultatiTitolo").textContent = r.spese.length
+      ? `Risultati (${r.spese.length}${r.spese.length === 50 ? ", mostro i più recenti" : ""})`
+      : "Nessuna spesa trovata";
+    let somma = 0;
+    r.spese.forEach(s => {
+      somma += parseFloat(s.totale.replace("€","").replace(/\./g,"").replace(",",".")) || 0;
+      const div = document.createElement("div");
+      div.className = "voce-lista";
+      div.innerHTML = `<div class="vl-info"><div class="vl-negozio"></div>
+        <div class="vl-sub"></div></div><div class="vl-tot"></div>`;
+      div.querySelector(".vl-negozio").textContent = s.negozio || "N/D";
+      div.querySelector(".vl-sub").textContent = s.data + " • " + s.categoria;
+      div.querySelector(".vl-tot").textContent = s.totale;
+      lista.appendChild(div);
+    });
+    if (r.spese.length > 1){
+      const totDiv = document.createElement("div");
+      totDiv.className = "voce-lista";
+      totDiv.innerHTML = `<div class="vl-info"><div class="vl-negozio">TOTALE</div></div><div class="vl-tot"></div>`;
+      totDiv.querySelector(".vl-tot").textContent = "€ " + somma.toFixed(2).replace(".", ",");
+      lista.appendChild(totDiv);
+    }
+    $("cardRisultati").classList.remove("nascosto");
+  } catch (err) {
+    alert("Errore: " + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Cerca";
+  }
+};
+
+// ---------- chiusura mese ----------
+$("btnVaiMese").onclick = () => {
+  popolaSelettoriMese();
+  mostra("vistaMese");
+  caricaRiepiloghi();
+};
+$("btnIndietroMese").onclick = () => mostra("vistaHome");
+
+function popolaSelettoriMese(){
+  const mesi = ["Gennaio","Febbraio","Marzo","Aprile","Maggio","Giugno",
+                "Luglio","Agosto","Settembre","Ottobre","Novembre","Dicembre"];
+  const oggi = new Date();
+  // default: mese precedente
+  let mDef = oggi.getMonth(), yDef = oggi.getFullYear();
+  if (mDef === 0){ mDef = 12; yDef--; }
+  const mSel = $("meseSel");
+  mSel.innerHTML = "";
+  mesi.forEach((nome, i) => {
+    const o = document.createElement("option");
+    o.value = i + 1;
+    o.textContent = nome;
+    mSel.appendChild(o);
+  });
+  mSel.value = mDef;
+  const aSel = $("annoSel");
+  aSel.innerHTML = "";
+  for (let y = oggi.getFullYear(); y >= oggi.getFullYear() - 3; y--){
+    const o = document.createElement("option");
+    o.value = y;
+    o.textContent = y;
+    aSel.appendChild(o);
+  }
+  aSel.value = yDef;
+}
+
+$("btnChiudiMese").onclick = async () => {
+  const btn = $("btnChiudiMese");
+  const esito = $("meseEsito");
+  btn.disabled = true;
+  esito.innerHTML = '<span class="spinner-mini"></span> Generazione in corso, attendi…';
+  try {
+    const r = await api({ action: "chiudi_mese", anno: $("annoSel").value, mese: $("meseSel").value });
+    if (!r.ok) throw new Error(r.errore || "Generazione fallita");
+    esito.textContent = r.messaggio;
+    if (r.pdfUrl){
+      const a = document.createElement("a");
+      a.href = r.pdfUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "📄 Apri il PDF";
+      a.style.cssText = "display:block;margin-top:8px;color:var(--verde);font-weight:700";
+      esito.appendChild(a);
+    }
+    caricaRiepiloghi();
+  } catch (err) {
+    esito.textContent = "❌ " + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+async function caricaRiepiloghi(){
+  const box = $("listaRiepiloghi");
+  box.innerHTML = '<p class="centro"><span class="spinner-mini"></span> caricamento…</p>';
+  try {
+    const r = await api({ action: "riepiloghi" });
+    if (!r.ok) throw new Error(r.errore || "Errore");
+    if (!r.riepiloghi.length){
+      box.innerHTML = '<p class="centro">Nessun riepilogo ancora generato</p>';
+      return;
+    }
+    box.innerHTML = "";
+    r.riepiloghi.forEach(rp => {
+      const div = document.createElement("div");
+      div.className = "voce-lista";
+      div.innerHTML = `<div class="vl-info"><div class="vl-negozio"></div></div><a target="_blank" rel="noopener">📄 Apri PDF</a>`;
+      div.querySelector(".vl-negozio").textContent = rp.periodo;
+      div.querySelector("a").href = rp.url;
+      box.appendChild(div);
+    });
+  } catch (err) {
+    box.innerHTML = '<p class="errore">❌ ' + err.message + '</p>';
+  }
+}
+
+// ---------- impostazioni ----------
+$("btnHome").onclick = () => mostra("vistaHome");
+$("btnImpostazioni").onclick = () => {
+  $("cfgUrl").value = cfg.url;
+  $("cfgToken").value = cfg.token;
+  $("cfgEsito").textContent = "";
+  mostra("vistaImpostazioni");
+};
+
+$("btnSalvaCfg").onclick = async () => {
+  cfg.url = $("cfgUrl").value.trim();
+  cfg.token = $("cfgToken").value.trim();
+  const esito = $("cfgEsito");
+  esito.textContent = "Verifica in corso…";
+  try {
+    const r = await api({ action: "ping" });
+    esito.textContent = r.ok ? "✅ Connesso (backend v" + r.versione + ")" : "❌ " + (r.errore || "Errore");
+    if (r.ok) setTimeout(() => mostra("vistaHome"), 800);
+  } catch (err) {
+    esito.textContent = "❌ " + err.message;
+  }
+};
+
+// ---------- avvio ----------
+if (!cfg.url) mostra("vistaImpostazioni");
+else mostra("vistaHome");
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw.js").catch(() => {});
+}
+</script>
+</body>
+</html>

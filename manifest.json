@@ -1,0 +1,16 @@
+{
+  "name": "Gestione Scontrini",
+  "short_name": "Scontrini",
+  "description": "Fotografa gli scontrini, l'AI estrae i dati e li salva nel foglio spese",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4F6F4",
+  "theme_color": "#1B5E20",
+  "lang": "it",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
