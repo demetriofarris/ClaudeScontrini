@@ -107,6 +107,9 @@
   .tabella-spese td:nth-child(2){ word-break:break-word; }
   .tabella-spese .num{ text-align:right; white-space:nowrap; font-weight:600; }
   .tabella-spese .riga-totale td{ font-weight:700; border-top:2px solid #DDE5DD; border-bottom:none; }
+  .tabella-spese tbody tr:not(.riga-totale){ cursor:pointer; }
+  .voce-lista[data-riga]{ cursor:pointer; }
+  .hint-modifica{ font-size:.75rem; color:var(--grigio); text-align:center; margin-top:8px; }
 </style>
 </head>
 <body>
@@ -117,6 +120,8 @@
 </header>
 
 <main>
+
+  <div id="bannerOk" class="ok-banner nascosto"></div>
 
   <!-- ======== IMPOSTAZIONI ======== -->
   <section id="vistaImpostazioni" class="card nascosto">
@@ -134,7 +139,6 @@
 
   <!-- ======== HOME ======== -->
   <section id="vistaHome">
-    <div id="bannerOk" class="ok-banner nascosto"></div>
     <div class="griglia-home">
       <button class="tile tile-primario" id="btnFoto"><span class="tile-icona">📷</span>Foto scontrino</button>
       <button class="tile" id="btnPdf"><span class="tile-icona">📄</span>Carica PDF</button>
@@ -231,6 +235,65 @@
     <p id="formErrore" class="errore nascosto"></p>
   </section>
 
+  <!-- ======== MODIFICA SPESA SALVATA ======== -->
+  <section id="vistaModifica" class="card nascosto">
+    <h2>✏️ Modifica spesa</h2>
+
+    <div class="riga-doppia">
+      <div>
+        <label>Data (GG/MM/AAAA)</label>
+        <input id="mData" type="text" inputmode="numeric" placeholder="12/06/2026">
+      </div>
+      <div>
+        <label>Totale</label>
+        <input id="mTotale" type="text" inputmode="decimal" placeholder="€ 12,34">
+      </div>
+    </div>
+
+    <label>Negozio</label>
+    <input id="mNegozio" type="text">
+
+    <label>Categoria</label>
+    <select id="mCategoria">
+      <option>Ristoranti</option>
+      <option>Trasporti</option>
+      <option>Pernottamenti</option>
+      <option>Altro</option>
+    </select>
+
+    <div class="riga-doppia">
+      <div>
+        <label>Ospiti interni</label>
+        <input id="mOspInt" type="text">
+      </div>
+      <div>
+        <label>Ospiti esterni</label>
+        <input id="mOspEst" type="text">
+      </div>
+    </div>
+
+    <label>Note</label>
+    <textarea id="mNote"></textarea>
+
+    <label>Sostituisci immagini — facoltativo</label>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn btn-secondario" id="btnMFoto" style="margin-top:0;flex:1">📄 Scontrino</button>
+      <img id="mFotoAnteprima" class="mini-foto nascosto" alt="nuova foto scontrino">
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
+      <button class="btn btn-secondario" id="btnMBancomat" style="margin-top:0;flex:1">💳 Pagamento</button>
+      <img id="mBancomatAnteprima" class="mini-foto nascosto" alt="nuova foto pagamento">
+    </div>
+    <input id="inputMFoto" class="nascosto" type="file" accept="image/*">
+    <input id="inputMBancomat" class="nascosto" type="file" accept="image/*">
+
+    <div style="margin-top:18px">
+      <button class="btn btn-primario" id="btnSalvaMod">💾 Salva modifiche</button>
+      <button class="btn btn-secondario" id="btnAnnullaMod">Annulla</button>
+    </div>
+    <p id="mErrore" class="errore nascosto"></p>
+  </section>
+
   <!-- ======== ELENCO SPESE DEL MESE ======== -->
   <section id="vistaElenco" class="nascosto">
     <div class="card">
@@ -311,7 +374,7 @@ let editor = { canvasFull: null, canvasCrop: null };
 
 // ---------- riferimenti DOM ----------
 const $ = (id) => document.getElementById(id);
-const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaElenco", "vistaCerca", "vistaMese", "vistaImpostazioni"];
+const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaModifica", "vistaElenco", "vistaCerca", "vistaMese", "vistaImpostazioni"];
 function mostra(vista){
   viste.forEach(v => $(v).classList.toggle("nascosto", v !== vista));
 }
@@ -761,6 +824,91 @@ $("btnSalva").onclick = async () => {
   }
 };
 
+// ---------- modifica di una spesa già salvata ----------
+// spesa = oggetto restituito da "cerca" (con .riga); origine = vista di provenienza
+let modifica = { riga: null, fotoB64: null, bancomatB64: null, origine: "vistaHome" };
+
+function apriModifica(spesa, origine){
+  modifica = { riga: spesa.riga, fotoB64: null, bancomatB64: null, origine };
+  $("mData").value = spesa.data || "";
+  $("mTotale").value = spesa.totale || "";
+  $("mNegozio").value = spesa.negozio || "";
+  // categorie storiche fuori elenco (es. "Ristoranti/Bar"): aggiunte come opzione temporanea
+  const sel = $("mCategoria");
+  [...sel.options].forEach(o => { if (o.dataset.temp) o.remove(); });
+  if (spesa.categoria && ![...sel.options].some(o => o.value === spesa.categoria)){
+    const o = document.createElement("option");
+    o.value = o.textContent = spesa.categoria;
+    o.dataset.temp = "1";
+    sel.appendChild(o);
+  }
+  sel.value = spesa.categoria || "Altro";
+  $("mOspInt").value = spesa.ospitiInterni || "";
+  $("mOspEst").value = spesa.ospitiEsterni || "";
+  $("mNote").value = spesa.note || "";
+  $("mFotoAnteprima").classList.add("nascosto");
+  $("mBancomatAnteprima").classList.add("nascosto");
+  $("mErrore").classList.add("nascosto");
+  mostra("vistaModifica");
+}
+
+$("btnMFoto").onclick = () => $("inputMFoto").click();
+$("btnMBancomat").onclick = () => $("inputMBancomat").click();
+
+async function caricaNuovaImmagine(e, campo, anteprimaId){
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  try {
+    const canvas = await caricaImmagine(file);
+    modifica[campo] = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+    const mini = $(anteprimaId);
+    mini.src = "data:image/jpeg;base64," + modifica[campo];
+    mini.classList.remove("nascosto");
+  } catch (err) {
+    alert("Errore: " + err.message);
+  }
+}
+$("inputMFoto").onchange = (e) => caricaNuovaImmagine(e, "fotoB64", "mFotoAnteprima");
+$("inputMBancomat").onchange = (e) => caricaNuovaImmagine(e, "bancomatB64", "mBancomatAnteprima");
+
+$("btnAnnullaMod").onclick = () => mostra(modifica.origine);
+
+$("btnSalvaMod").onclick = async () => {
+  const btn = $("btnSalvaMod");
+  btn.disabled = true;
+  $("mErrore").classList.add("nascosto");
+  try {
+    const corpo = {
+      action: "aggiorna",
+      riga: modifica.riga,
+      data: $("mData").value,
+      totale: $("mTotale").value,
+      negozio: $("mNegozio").value,
+      categoria: $("mCategoria").value,
+      ospitiInterni: $("mOspInt").value,
+      ospitiEsterni: $("mOspEst").value,
+      note: $("mNote").value
+    };
+    if (modifica.fotoB64){ corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
+    if (modifica.bancomatB64){ corpo.fotoBancomat = modifica.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
+    const r = await api(corpo);
+    if (!r.ok) throw new Error(r.errore || "Aggiornamento fallito");
+    mostra(modifica.origine);
+    if (modifica.origine === "vistaElenco") caricaElenco();
+    const banner = $("bannerOk");
+    banner.textContent = "✅ Spesa aggiornata (riga " + r.riga + ")";
+    banner.classList.remove("nascosto");
+    setTimeout(() => banner.classList.add("nascosto"), 5000);
+  } catch (err) {
+    const el = $("mErrore");
+    el.textContent = err.message;
+    el.classList.remove("nascosto");
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 // ---------- elenco spese del mese (tabella a schermo) ----------
 function parseEuro(t){
   return parseFloat(String(t).replace("€", "").replace(/\./g, "").replace(",", ".")) || 0;
@@ -803,6 +951,7 @@ async function caricaElenco(){
         tr.appendChild(td);
       });
       tr.lastChild.classList.add("num");
+      tr.onclick = () => apriModifica(s, "vistaElenco");
       corpo.appendChild(tr);
     });
     const piede = document.createElement("tr");
@@ -813,6 +962,10 @@ async function caricaElenco(){
     corpo.appendChild(piede);
     box.innerHTML = "";
     box.appendChild(tab);
+    const hint = document.createElement("p");
+    hint.className = "hint-modifica";
+    hint.textContent = "Tocca una spesa per modificarla";
+    box.appendChild(hint);
   } catch (err) {
     box.innerHTML = "";
     const p = document.createElement("p");
@@ -847,11 +1000,13 @@ $("btnCerca").onclick = async () => {
       somma += parseEuro(s.totale);
       const div = document.createElement("div");
       div.className = "voce-lista";
+      div.dataset.riga = s.riga;
       div.innerHTML = `<div class="vl-info"><div class="vl-negozio"></div>
         <div class="vl-sub"></div></div><div class="vl-tot"></div>`;
       div.querySelector(".vl-negozio").textContent = s.negozio || "N/D";
       div.querySelector(".vl-sub").textContent = s.data + " • " + s.categoria;
       div.querySelector(".vl-tot").textContent = s.totale;
+      div.onclick = () => apriModifica(s, "vistaCerca");
       lista.appendChild(div);
     });
     if (r.spese.length > 1){
