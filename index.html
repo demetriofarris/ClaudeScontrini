@@ -87,6 +87,24 @@
   .toggle-riga span{ font-weight:600; font-size:.95rem; }
   input[type="checkbox"]{ width:22px; height:22px; accent-color:var(--verde); }
   input[type="range"]{ padding:0; accent-color:var(--verde); }
+  .griglia-home{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .tile{
+    aspect-ratio:1; border:none; border-radius:16px; cursor:pointer;
+    background:var(--carta); color:var(--verde);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px;
+    font-family:inherit; font-size:1rem; font-weight:600; text-align:center; padding:8px;
+    box-shadow:0 1px 4px rgba(0,0,0,.08);
+  }
+  .tile-icona{ font-size:2.4rem; }
+  .tile-primario{ background:var(--verde); color:#fff; }
+  .tabella-spese{ width:100%; border-collapse:collapse; font-size:.85rem; }
+  .tabella-spese th{
+    text-align:left; color:var(--grigio); font-size:.72rem; text-transform:uppercase;
+    padding:6px 4px; border-bottom:2px solid #DDE5DD;
+  }
+  .tabella-spese td{ padding:9px 4px; border-bottom:1px solid #EEE; vertical-align:top; }
+  .tabella-spese .num{ text-align:right; white-space:nowrap; font-weight:600; }
+  .tabella-spese .riga-totale td{ font-weight:700; border-top:2px solid #DDE5DD; border-bottom:none; }
 </style>
 </head>
 <body>
@@ -115,20 +133,15 @@
   <!-- ======== HOME ======== -->
   <section id="vistaHome">
     <div id="bannerOk" class="ok-banner nascosto"></div>
-    <div class="card">
-      <h2>➕ Nuova spesa</h2>
-      <button class="btn btn-primario" id="btnFoto">📷 Scatta foto scontrino</button>
-      <button class="btn btn-secondario" id="btnPdf">📄 Carica PDF (fattura/ricevuta)</button>
+    <div class="griglia-home">
+      <button class="tile tile-primario" id="btnFoto"><span class="tile-icona">📷</span>Foto scontrino</button>
+      <button class="tile" id="btnPdf"><span class="tile-icona">📄</span>Carica PDF</button>
+      <button class="tile" id="btnVaiElenco"><span class="tile-icona">📋</span>Spese del mese</button>
+      <button class="tile" id="btnVaiCerca"><span class="tile-icona">🔍</span>Cerca spese</button>
+      <button class="tile" id="btnVaiMese"><span class="tile-icona">📊</span>Chiusura mese</button>
+      <button class="tile" id="btnVaiImpostazioni"><span class="tile-icona">⚙️</span>Impostazioni</button>
     </div>
-    <div class="card">
-      <h2>🔍 Cerca spese</h2>
-      <button class="btn btn-secondario" id="btnVaiCerca" style="margin-top:0">Apri ricerca</button>
-    </div>
-    <div class="card">
-      <h2>📊 Chiusura mese</h2>
-      <button class="btn btn-secondario" id="btnVaiMese" style="margin-top:0">Riepiloghi e stampa PDF</button>
-    </div>
-    <input id="inputFoto" class="nascosto" type="file" accept="image/*" capture="environment">
+    <input id="inputFoto" class="nascosto" type="file" accept="image/*">
     <input id="inputPdf" class="nascosto" type="file" accept="application/pdf">
   </section>
 
@@ -207,13 +220,26 @@
       <button class="btn btn-secondario" id="btnBancomat" style="margin-top:0;flex:1">💳 Aggiungi foto</button>
       <img id="bancomatAnteprima" class="mini-foto nascosto" alt="foto bancomat">
     </div>
-    <input id="inputBancomat" class="nascosto" type="file" accept="image/*" capture="environment">
+    <input id="inputBancomat" class="nascosto" type="file" accept="image/*">
 
     <div style="margin-top:18px">
       <button class="btn btn-primario" id="btnSalva">💾 Salva spesa</button>
       <button class="btn btn-secondario" id="btnAnnulla">Annulla</button>
     </div>
     <p id="formErrore" class="errore nascosto"></p>
+  </section>
+
+  <!-- ======== ELENCO SPESE DEL MESE ======== -->
+  <section id="vistaElenco" class="nascosto">
+    <div class="card">
+      <h2>📋 Spese del mese</h2>
+      <label>Mese</label>
+      <input id="elencoMese" type="month">
+      <div id="boxElenco" style="margin-top:14px"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-secondario" id="btnIndietroElenco" style="margin-top:0">← Home</button>
+      </div>
+    </div>
   </section>
 
   <!-- ======== RICERCA ======== -->
@@ -283,7 +309,7 @@ let editor = { canvasFull: null, canvasCrop: null };
 
 // ---------- riferimenti DOM ----------
 const $ = (id) => document.getElementById(id);
-const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaCerca", "vistaMese", "vistaImpostazioni"];
+const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaElenco", "vistaCerca", "vistaMese", "vistaImpostazioni"];
 function mostra(vista){
   viste.forEach(v => $(v).classList.toggle("nascosto", v !== vista));
 }
@@ -733,6 +759,66 @@ $("btnSalva").onclick = async () => {
   }
 };
 
+// ---------- elenco spese del mese (tabella a schermo) ----------
+function parseEuro(t){
+  return parseFloat(String(t).replace("€", "").replace(/\./g, "").replace(",", ".")) || 0;
+}
+function formattaEuro(n){
+  return "€ " + n.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: "always" });
+}
+
+$("btnVaiElenco").onclick = () => {
+  const oggi = new Date();
+  $("elencoMese").value = oggi.getFullYear() + "-" + String(oggi.getMonth() + 1).padStart(2, "0");
+  mostra("vistaElenco");
+  caricaElenco();
+};
+$("elencoMese").onchange = () => caricaElenco();
+$("btnIndietroElenco").onclick = () => mostra("vistaHome");
+
+async function caricaElenco(){
+  const box = $("boxElenco");
+  box.innerHTML = '<p class="centro"><span class="spinner-mini"></span> caricamento…</p>';
+  try {
+    const r = await api({ action: "cerca", query: "", periodo: $("elencoMese").value });
+    if (!r.ok) throw new Error(r.errore || "Errore");
+    if (!r.spese.length){
+      box.innerHTML = '<p class="centro">Nessuna spesa in questo mese</p>';
+      return;
+    }
+    const tab = document.createElement("table");
+    tab.className = "tabella-spese";
+    tab.innerHTML = "<thead><tr><th>Data</th><th>Negozio</th><th>Categoria</th><th class='num'>Totale</th></tr></thead><tbody></tbody>";
+    const corpo = tab.querySelector("tbody");
+    let somma = 0;
+    r.spese.forEach(s => {
+      somma += parseEuro(s.totale);
+      const tr = document.createElement("tr");
+      [s.data, s.negozio || "N/D", s.categoria, s.totale].forEach(v => {
+        const td = document.createElement("td");
+        td.textContent = v;
+        tr.appendChild(td);
+      });
+      tr.lastChild.classList.add("num");
+      corpo.appendChild(tr);
+    });
+    const piede = document.createElement("tr");
+    piede.className = "riga-totale";
+    piede.innerHTML = "<td colspan='3'></td><td class='num'></td>";
+    piede.querySelector("td").textContent = "TOTALE (" + r.spese.length + ")";
+    piede.querySelector(".num").textContent = formattaEuro(somma);
+    corpo.appendChild(piede);
+    box.innerHTML = "";
+    box.appendChild(tab);
+  } catch (err) {
+    box.innerHTML = "";
+    const p = document.createElement("p");
+    p.className = "errore";
+    p.textContent = "❌ " + err.message;
+    box.appendChild(p);
+  }
+}
+
 // ---------- ricerca ----------
 $("btnVaiCerca").onclick = () => {
   $("cardRisultati").classList.add("nascosto");
@@ -755,7 +841,7 @@ $("btnCerca").onclick = async () => {
       : "Nessuna spesa trovata";
     let somma = 0;
     r.spese.forEach(s => {
-      somma += parseFloat(s.totale.replace("€","").replace(/\./g,"").replace(",",".")) || 0;
+      somma += parseEuro(s.totale);
       const div = document.createElement("div");
       div.className = "voce-lista";
       div.innerHTML = `<div class="vl-info"><div class="vl-negozio"></div>
@@ -769,7 +855,7 @@ $("btnCerca").onclick = async () => {
       const totDiv = document.createElement("div");
       totDiv.className = "voce-lista";
       totDiv.innerHTML = `<div class="vl-info"><div class="vl-negozio">TOTALE</div></div><div class="vl-tot"></div>`;
-      totDiv.querySelector(".vl-tot").textContent = "€ " + somma.toFixed(2).replace(".", ",");
+      totDiv.querySelector(".vl-tot").textContent = formattaEuro(somma);
       lista.appendChild(totDiv);
     }
     $("cardRisultati").classList.remove("nascosto");
@@ -868,12 +954,14 @@ async function caricaRiepiloghi(){
 
 // ---------- impostazioni ----------
 $("btnHome").onclick = () => mostra("vistaHome");
-$("btnImpostazioni").onclick = () => {
+function apriImpostazioni(){
   $("cfgUrl").value = cfg.url;
   $("cfgToken").value = cfg.token;
   $("cfgEsito").textContent = "";
   mostra("vistaImpostazioni");
-};
+}
+$("btnImpostazioni").onclick = apriImpostazioni;
+$("btnVaiImpostazioni").onclick = apriImpostazioni;
 
 $("btnSalvaCfg").onclick = async () => {
   cfg.url = $("cfgUrl").value.trim();
