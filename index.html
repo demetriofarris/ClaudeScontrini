@@ -103,6 +103,8 @@
     padding:6px 4px; border-bottom:2px solid #DDE5DD;
   }
   .tabella-spese td{ padding:9px 4px; border-bottom:1px solid #EEE; vertical-align:top; }
+  .tabella-spese td:first-child{ white-space:nowrap; color:var(--grigio); }
+  .tabella-spese td:nth-child(2){ word-break:break-word; }
   .tabella-spese .num{ text-align:right; white-space:nowrap; font-weight:600; }
   .tabella-spese .riga-totale td{ font-weight:700; border-top:2px solid #DDE5DD; border-bottom:none; }
 </style>
@@ -788,13 +790,14 @@ async function caricaElenco(){
     }
     const tab = document.createElement("table");
     tab.className = "tabella-spese";
-    tab.innerHTML = "<thead><tr><th>Data</th><th>Negozio</th><th>Categoria</th><th class='num'>Totale</th></tr></thead><tbody></tbody>";
+    tab.innerHTML = "<thead><tr><th>Data</th><th>Negozio</th><th class='num'>Totale</th></tr></thead><tbody></tbody>";
     const corpo = tab.querySelector("tbody");
     let somma = 0;
     r.spese.forEach(s => {
       somma += parseEuro(s.totale);
       const tr = document.createElement("tr");
-      [s.data, s.negozio || "N/D", s.categoria, s.totale].forEach(v => {
+      // solo giorno/mese: l'anno è già nel selettore del mese
+      [s.data.slice(0, 5), s.negozio || "N/D", s.totale].forEach(v => {
         const td = document.createElement("td");
         td.textContent = v;
         tr.appendChild(td);
@@ -804,7 +807,7 @@ async function caricaElenco(){
     });
     const piede = document.createElement("tr");
     piede.className = "riga-totale";
-    piede.innerHTML = "<td colspan='3'></td><td class='num'></td>";
+    piede.innerHTML = "<td colspan='2'></td><td class='num'></td>";
     piede.querySelector("td").textContent = "TOTALE (" + r.spese.length + ")";
     piede.querySelector(".num").textContent = formattaEuro(somma);
     corpo.appendChild(piede);
