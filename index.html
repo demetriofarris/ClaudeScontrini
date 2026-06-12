@@ -279,7 +279,7 @@ const cfg = {
 let stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
 
 // dati dell'editor foto
-let editor = { canvasFull: null, crop: null };
+let editor = { canvasFull: null, canvasCrop: null };
 
 // ---------- riferimenti DOM ----------
 const $ = (id) => document.getElementById(id);
@@ -359,13 +359,37 @@ function applicaScansioneBN(imageData, w, h, sensibilita){
   return imageData;
 }
 
-// ---------- ritaglio automatico (rileva il foglio chiaro nell'inquadratura) ----------
-// Lavora su una copia ridotta: separa carta e sfondo con la soglia di Otsu
-// (pixel chiari e poco saturi = carta), trova la regione connessa più grande
-// e ne restituisce il bounding box in coordinate dell'immagine piena.
-// Restituisce null se il foglio riempie già l'inquadratura o non è riconoscibile.
-function rilevaRitaglio(canvas){
-  const w = 200, h = Math.max(1, Math.round(canvas.height * 200 / canvas.width));
+// ---------- ritaglio automatico v2 (4 angoli + raddrizzamento prospettico) ----------
+// Come le app scanner: separa la carta dallo sfondo (soglia di Otsu), prende la
+// regione connessa più grande, ne calcola il guscio convesso e da lì i 4 angoli
+// del foglio (rettangolo ruotato di area minima → punto del guscio più vicino a
+// ogni angolo). Il quadrilatero viene poi raddrizzato con una trasformazione
+// prospettica. Restituisce null se il foglio non è riconoscibile o riempie già
+// l'inquadratura.
+
+// guscio convesso di un insieme di punti [x,y] (monotone chain)
+function guscioConvesso(punti){
+  punti.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o, a, b) => (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0]);
+  const basso = [];
+  for (const p of punti){
+    while (basso.length >= 2 && cross(basso[basso.length-2], basso[basso.length-1], p) <= 0) basso.pop();
+    basso.push(p);
+  }
+  const alto = [];
+  for (let i = punti.length - 1; i >= 0; i--){
+    const p = punti[i];
+    while (alto.length >= 2 && cross(alto[alto.length-2], alto[alto.length-1], p) <= 0) alto.pop();
+    alto.push(p);
+  }
+  basso.pop(); alto.pop();
+  return basso.concat(alto);
+}
+
+// trova i 4 angoli del foglio; restituisce [{x,y}×4] ordinati TL,TR,BR,BL
+// in coordinate dell'immagine piena, oppure null
+function rilevaQuadrilatero(canvas){
+  const w = 320, h = Math.max(1, Math.round(canvas.height * 320 / canvas.width));
   const piccolo = document.createElement("canvas");
   piccolo.width = w; piccolo.height = h;
   const ctx = piccolo.getContext("2d");
@@ -404,65 +428,168 @@ function rilevaRitaglio(canvas){
     mask[i] = (lum[i] > soglia && sat < 80) ? 1 : 0;
   }
 
-  // regione connessa più grande (BFS, 4-connettività)
+  // regione connessa più grande (BFS, 4-connettività), con gli estremi
+  // sinistro/destro di ogni riga: bastano quelli per il guscio convesso
   const visitato = new Uint8Array(tot);
   const coda = new Int32Array(tot);
   let migliore = null;
   for (let inizio = 0; inizio < tot; inizio++){
     if (!mask[inizio] || visitato[inizio]) continue;
+    const rMin = new Int16Array(h).fill(w), rMax = new Int16Array(h).fill(-1);
     let testa = 0, fine = 0, count = 0;
-    let minX = w, maxX = 0, minY = h, maxY = 0;
     coda[fine++] = inizio;
     visitato[inizio] = 1;
     while (testa < fine){
       const p = coda[testa++];
       count++;
       const px = p % w, py = (p / w) | 0;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
+      if (px < rMin[py]) rMin[py] = px;
+      if (px > rMax[py]) rMax[py] = px;
       if (px > 0   && mask[p-1] && !visitato[p-1]){ visitato[p-1] = 1; coda[fine++] = p-1; }
       if (px < w-1 && mask[p+1] && !visitato[p+1]){ visitato[p+1] = 1; coda[fine++] = p+1; }
       if (py > 0   && mask[p-w] && !visitato[p-w]){ visitato[p-w] = 1; coda[fine++] = p-w; }
       if (py < h-1 && mask[p+w] && !visitato[p+w]){ visitato[p+w] = 1; coda[fine++] = p+w; }
     }
     if (!migliore || count > migliore.count){
-      migliore = { count, minX, maxX, minY, maxY };
+      migliore = { count, rMin, rMax };
     }
   }
+  if (!migliore || migliore.count < tot * 0.06) return null;   // foglio non riconosciuto
 
-  if (!migliore || migliore.count < tot * 0.10) return null;   // foglio non riconosciuto
+  // punti di bordo della regione → guscio convesso
+  const punti = [];
+  for (let y = 0; y < h; y++){
+    if (migliore.rMax[y] < 0) continue;
+    punti.push([migliore.rMin[y], y]);
+    if (migliore.rMax[y] !== migliore.rMin[y]) punti.push([migliore.rMax[y], y]);
+  }
+  const guscio = guscioConvesso(punti);
+  if (guscio.length < 4) return null;
 
-  // margine 2% attorno al riquadro
-  const margine = Math.round(w * 0.02);
-  const x1 = Math.max(0, migliore.minX - margine), y1 = Math.max(0, migliore.minY - margine);
-  const x2 = Math.min(w-1, migliore.maxX + margine), y2 = Math.min(h-1, migliore.maxY + margine);
-  if ((x2-x1+1) * (y2-y1+1) > tot * 0.93) return null;         // occupa già quasi tutto
+  // rettangolo ruotato di area minima: prova la direzione di ogni lato del guscio
+  let best = null;
+  for (let i = 0; i < guscio.length; i++){
+    const [x1, y1] = guscio[i], [x2, y2] = guscio[(i+1) % guscio.length];
+    const len = Math.hypot(x2-x1, y2-y1);
+    if (!len) continue;
+    const ux = (x2-x1)/len, uy = (y2-y1)/len;
+    let minU = Infinity, maxU = -Infinity, minV = Infinity, maxV = -Infinity;
+    for (const [px, py] of guscio){
+      const u = px*ux + py*uy, v = -px*uy + py*ux;
+      if (u < minU) minU = u;
+      if (u > maxU) maxU = u;
+      if (v < minV) minV = v;
+      if (v > maxV) maxV = v;
+    }
+    const area = (maxU-minU) * (maxV-minV);
+    if (!best || area < best.area) best = { area, ux, uy, minU, maxU, minV, maxV };
+  }
+  if (!best) return null;
 
-  // riporta alle coordinate dell'immagine piena
+  // angolo reale del foglio = punto del guscio più vicino a ogni angolo del rettangolo
+  const rett = [
+    [best.minU, best.minV], [best.maxU, best.minV],
+    [best.maxU, best.maxV], [best.minU, best.maxV]
+  ].map(([u, v]) => [u*best.ux - v*best.uy, u*best.uy + v*best.ux]);
+  const quad = rett.map(([rx, ry]) => {
+    let scelto = guscio[0], dMin = Infinity;
+    for (const p of guscio){
+      const dd = (p[0]-rx)*(p[0]-rx) + (p[1]-ry)*(p[1]-ry);
+      if (dd < dMin){ dMin = dd; scelto = p; }
+    }
+    return { x: scelto[0], y: scelto[1] };
+  });
+  for (let i = 0; i < 4; i++)
+    for (let j = i+1; j < 4; j++)
+      if (quad[i].x === quad[j].x && quad[i].y === quad[j].y) return null;
+
+  // controlli di sanità sull'area del quadrilatero (shoelace)
+  let area2 = 0;
+  for (let i = 0; i < 4; i++){
+    const p = quad[i], q = quad[(i+1) % 4];
+    area2 += p.x*q.y - q.x*p.y;
+  }
+  const areaQuad = Math.abs(area2) / 2;
+  if (areaQuad < tot * 0.04) return null;   // troppo piccolo: probabile falso positivo
+  if (areaQuad > tot * 0.90) return null;   // il foglio riempie già l'inquadratura
+
+  // ordina TL,TR,BR,BL: verso orario su schermo, partenza dall'angolo in alto a sinistra
+  if (area2 < 0) quad.reverse();
+  let iTL = 0;
+  for (let i = 1; i < 4; i++)
+    if (quad[i].x + quad[i].y < quad[iTL].x + quad[iTL].y) iTL = i;
+  quad.push(...quad.splice(0, iTL));
+
+  // margine 4% (espansione dal baricentro) e ritorno alle coordinate piene
+  const cx = (quad[0].x + quad[1].x + quad[2].x + quad[3].x) / 4;
+  const cy = (quad[0].y + quad[1].y + quad[2].y + quad[3].y) / 4;
   const f = canvas.width / w;
-  const X = Math.round(x1 * f), Y = Math.round(y1 * f);
-  return {
-    x: X,
-    y: Y,
-    w: Math.min(canvas.width  - X, Math.round((x2 - x1 + 1) * f)),
-    h: Math.min(canvas.height - Y, Math.round((y2 - y1 + 1) * f))
-  };
+  return quad.map(p => ({
+    x: Math.min(canvas.width  - 1, Math.max(0, Math.round((cx + (p.x - cx) * 1.04) * f))),
+    y: Math.min(canvas.height - 1, Math.max(0, Math.round((cy + (p.y - cy) * 1.04) * f)))
+  }));
+}
+
+// raddrizza il quadrilatero in un rettangolo con una trasformazione prospettica:
+// proiettiva quadrato unitario → quadrilatero (formula di Heckbert), mappatura
+// inversa dal rettangolo di destinazione e campionamento bilineare
+function raddrizzaProspettiva(canvas, quad){
+  const [p0, p1, p2, p3] = quad;   // TL, TR, BR, BL
+  const W = Math.round(Math.max(Math.hypot(p1.x-p0.x, p1.y-p0.y), Math.hypot(p2.x-p3.x, p2.y-p3.y)));
+  const H = Math.round(Math.max(Math.hypot(p3.x-p0.x, p3.y-p0.y), Math.hypot(p2.x-p1.x, p2.y-p1.y)));
+  if (W < 40 || H < 40) return null;
+
+  const dx1 = p1.x-p2.x, dx2 = p3.x-p2.x, dy1 = p1.y-p2.y, dy2 = p3.y-p2.y;
+  const sx = p0.x-p1.x+p2.x-p3.x, sy = p0.y-p1.y+p2.y-p3.y;
+  const den = dx1*dy2 - dx2*dy1;
+  if (!den) return null;
+  const g = (sx*dy2 - sy*dx2) / den, hp = (dx1*sy - dy1*sx) / den;
+  const a = p1.x-p0.x+g*p1.x, b = p3.x-p0.x+hp*p3.x, c = p0.x;
+  const dq = p1.y-p0.y+g*p1.y, e = p3.y-p0.y+hp*p3.y, fq = p0.y;
+
+  const sw = canvas.width, sh = canvas.height;
+  const src = canvas.getContext("2d").getImageData(0, 0, sw, sh).data;
+  const out = document.createElement("canvas");
+  out.width = W; out.height = H;
+  const outCtx = out.getContext("2d");
+  const img = outCtx.createImageData(W, H);
+  const o = img.data;
+  for (let y = 0; y < H; y++){
+    const v = (y + 0.5) / H;
+    for (let x = 0; x < W; x++){
+      const u = (x + 0.5) / W;
+      const wq = g*u + hp*v + 1;
+      let xs = (a*u + b*v + c) / wq;
+      let ys = (dq*u + e*v + fq) / wq;
+      if (xs < 0) xs = 0; else if (xs > sw - 1.001) xs = sw - 1.001;
+      if (ys < 0) ys = 0; else if (ys > sh - 1.001) ys = sh - 1.001;
+      const x0 = xs | 0, y0 = ys | 0;
+      const fx = xs - x0, fy = ys - y0;
+      const i00 = (y0*sw + x0) * 4, i10 = i00 + 4, i01 = i00 + sw*4, i11 = i01 + 4;
+      const k = (y*W + x) * 4;
+      for (let ch = 0; ch < 3; ch++){
+        const top = src[i00+ch] + (src[i10+ch] - src[i00+ch]) * fx;
+        const bot = src[i01+ch] + (src[i11+ch] - src[i01+ch]) * fx;
+        o[k+ch] = top + (bot - top) * fy;
+      }
+      o[k+3] = 255;
+    }
+  }
+  outCtx.putImageData(img, 0, 0);
+  return out;
 }
 
 function aggiornaAnteprimaEditor(){
   const cv = $("canvasEdit");
   const ctx = cv.getContext("2d");
-  const usaCrop = editor.crop && $("toggleCrop").checked;
-  const r = usaCrop ? editor.crop
-                    : { x: 0, y: 0, w: editor.canvasFull.width, h: editor.canvasFull.height };
-  cv.width = r.w;
-  cv.height = r.h;
-  ctx.drawImage(editor.canvasFull, r.x, r.y, r.w, r.h, 0, 0, r.w, r.h);
+  const usaCrop = editor.canvasCrop && $("toggleCrop").checked;
+  const sorgente = usaCrop ? editor.canvasCrop : editor.canvasFull;
+  cv.width = sorgente.width;
+  cv.height = sorgente.height;
+  ctx.drawImage(sorgente, 0, 0);
   if ($("toggleBN").checked){
-    const img = ctx.getImageData(0, 0, r.w, r.h);
-    applicaScansioneBN(img, r.w, r.h, $("sliderBN").value / 100);
+    const img = ctx.getImageData(0, 0, cv.width, cv.height);
+    applicaScansioneBN(img, cv.width, cv.height, $("sliderBN").value / 100);
     ctx.putImageData(img, 0, 0);
   }
   $("boxContrasto").classList.toggle("nascosto", !$("toggleBN").checked);
@@ -477,9 +604,10 @@ $("inputFoto").onchange = async (e) => {
   if (!file) return;
   try {
     editor.canvasFull = await caricaImmagine(file);
-    editor.crop = rilevaRitaglio(editor.canvasFull);
-    // la riga "Ritaglio automatico" compare solo se un riquadro è stato trovato
-    $("rigaCrop").classList.toggle("nascosto", !editor.crop);
+    const quad = rilevaQuadrilatero(editor.canvasFull);
+    editor.canvasCrop = quad ? raddrizzaProspettiva(editor.canvasFull, quad) : null;
+    // la riga "Ritaglio automatico" compare solo se il foglio è stato trovato
+    $("rigaCrop").classList.toggle("nascosto", !editor.canvasCrop);
     $("toggleCrop").checked = true;
     $("toggleBN").checked = true;
     $("sliderBN").value = 15;
