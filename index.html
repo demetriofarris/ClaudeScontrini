@@ -148,7 +148,7 @@
       <button class="tile" id="btnVaiMese"><span class="tile-icona">📊</span>Chiusura mese</button>
       <button class="tile" id="btnVaiImpostazioni"><span class="tile-icona">⚙️</span>Impostazioni</button>
     </div>
-    <input id="inputFoto" class="nascosto" type="file" accept="image/*">
+    <input id="inputFoto" class="nascosto" type="file" accept="image/*,application/pdf">
     <input id="inputPdf" class="nascosto" type="file" accept="application/pdf">
   </section>
 
@@ -688,6 +688,23 @@ function aggiornaAnteprimaEditor(){
   $("boxContrasto").classList.toggle("nascosto", !$("toggleBN").checked);
 }
 
+// ---------- flusso PDF condiviso (tasto "Carica PDF" e PDF da "Foto scontrino") ----------
+async function gestisciPdf(file){
+  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+  stato.pdfB64 = await fileInBase64(file);
+  $("fotoAnteprima").classList.add("nascosto");
+  $("etichettaPdf").classList.remove("nascosto");
+  // stessa esperienza delle foto: l'AI legge il PDF e precompila il form
+  mostra("vistaAnalisi");
+  let dati = null;
+  try {
+    const r = await api({ action: "analizza", pdf: stato.pdfB64 });
+    if (r.ok) dati = r.dati;
+  } catch (errAi) { /* analisi fallita: si compila a mano */ }
+  preparaForm(dati);
+  mostra("vistaForm");
+}
+
 // ---------- flusso foto: scatto → editor → AI → form ----------
 $("btnFoto").onclick = () => $("inputFoto").click();
 
@@ -696,6 +713,11 @@ $("inputFoto").onchange = async (e) => {
   e.target.value = "";
   if (!file) return;
   try {
+    // un PDF scelto qui salta l'editor di scansione e usa il flusso PDF
+    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
+      await gestisciPdf(file);
+      return;
+    }
     editor.canvasFull = await caricaImmagine(file);
     const quad = rilevaQuadrilatero(editor.canvasFull);
     editor.canvasCrop = quad ? raddrizzaProspettiva(editor.canvasFull, quad) : null;
@@ -748,22 +770,8 @@ $("inputPdf").onchange = async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
   try {
-    stato.pdfB64 = await fileInBase64(file);
-    $("fotoAnteprima").classList.add("nascosto");
-    $("etichettaPdf").classList.remove("nascosto");
-
-    // stessa esperienza delle foto: l'AI legge il PDF e precompila il form
-    mostra("vistaAnalisi");
-    let dati = null;
-    try {
-      const r = await api({ action: "analizza", pdf: stato.pdfB64 });
-      if (r.ok) dati = r.dati;
-    } catch (errAi) { /* analisi fallita: si compila a mano */ }
-
-    preparaForm(dati);
-    mostra("vistaForm");
+    await gestisciPdf(file);
   } catch (err) {
     alert("Errore: " + err.message);
   }
