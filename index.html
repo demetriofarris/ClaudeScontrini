@@ -73,6 +73,11 @@
   .riga-doppia{ display:flex; gap:10px; }
   .riga-doppia > div{ flex:1; }
   .mini-foto{ width:72px; height:72px; object-fit:cover; border-radius:8px; border:1px solid #DDD; }
+  .mini-pdf{
+    width:72px; height:72px; border-radius:8px; border:1px solid #DDD; background:#F4F6F4;
+    color:var(--verde); font-weight:700; font-size:.8rem;
+    display:flex; align-items:center; justify-content:center; flex-shrink:0;
+  }
   .voce-lista{
     display:flex; justify-content:space-between; align-items:center;
     padding:11px 4px; border-bottom:1px solid #EEE; gap:8px;
@@ -222,12 +227,13 @@
     <label>Note</label>
     <textarea id="fNote" placeholder="facoltative"></textarea>
 
-    <label>Foto pagamento (bancomat) — facoltativa</label>
+    <label>Pagamento (bancomat) — foto o PDF, facoltativo</label>
     <div style="display:flex;align-items:center;gap:10px">
-      <button class="btn btn-secondario" id="btnBancomat" style="margin-top:0;flex:1">💳 Aggiungi foto</button>
+      <button class="btn btn-secondario" id="btnBancomat" style="margin-top:0;flex:1">💳 Aggiungi</button>
       <img id="bancomatAnteprima" class="mini-foto nascosto" alt="foto bancomat">
+      <span id="bancomatPdfBadge" class="mini-pdf nascosto">📄 PDF</span>
     </div>
-    <input id="inputBancomat" class="nascosto" type="file" accept="image/*">
+    <input id="inputBancomat" class="nascosto" type="file" accept="image/*,application/pdf">
 
     <div style="margin-top:18px">
       <button class="btn btn-primario" id="btnSalva">💾 Salva spesa</button>
@@ -282,11 +288,12 @@
       <img id="mFotoAnteprima" class="mini-foto nascosto" alt="nuova foto scontrino">
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
-      <button class="btn btn-secondario" id="btnMBancomat" style="margin-top:0;flex:1">💳 Pagamento</button>
+      <button class="btn btn-secondario" id="btnMBancomat" style="margin-top:0;flex:1">💳 Pagamento (foto o PDF)</button>
       <img id="mBancomatAnteprima" class="mini-foto nascosto" alt="nuova foto pagamento">
+      <span id="mBancomatPdfBadge" class="mini-pdf nascosto">📄 PDF</span>
     </div>
     <input id="inputMFoto" class="nascosto" type="file" accept="image/*">
-    <input id="inputMBancomat" class="nascosto" type="file" accept="image/*">
+    <input id="inputMBancomat" class="nascosto" type="file" accept="image/*,application/pdf">
 
     <div style="margin-top:18px">
       <button class="btn btn-primario" id="btnSalvaMod">💾 Salva modifiche</button>
@@ -369,7 +376,7 @@ const cfg = {
 };
 
 // ---------- stato corrente ----------
-let stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+let stato = { fotoB64: null, pdfB64: null, bancomatB64: null, bancomatIsPdf: false, testoAi: "" };
 
 // dati dell'editor foto
 let editor = { canvasFull: null, canvasCrop: null };
@@ -690,7 +697,7 @@ function aggiornaAnteprimaEditor(){
 
 // ---------- flusso PDF condiviso (tasto "Carica PDF" e PDF da "Foto scontrino") ----------
 async function gestisciPdf(file){
-  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, bancomatIsPdf: false, testoAi: "" };
   stato.pdfB64 = await fileInBase64(file);
   $("fotoAnteprima").classList.add("nascosto");
   $("etichettaPdf").classList.remove("nascosto");
@@ -744,7 +751,7 @@ $("sliderBN").oninput = () => {
 $("btnAnnullaEditor").onclick = () => mostra("vistaHome");
 
 $("btnUsaFoto").onclick = async () => {
-  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, testoAi: "" };
+  stato = { fotoB64: null, pdfB64: null, bancomatB64: null, bancomatIsPdf: false, testoAi: "" };
   // l'immagine scelta (B/N o originale) è quella già sul canvas
   const qualita = $("toggleBN").checked ? 0.92 : 0.85;  // il B/N comprime benissimo
   stato.fotoB64 = $("canvasEdit").toDataURL("image/jpeg", qualita).split(",")[1];
@@ -788,7 +795,10 @@ function preparaForm(dati){
   $("fOspEst").value = "";
   $("fNote").value = "";
   stato.testoAi = dati?.testo || "";
+  stato.bancomatB64 = null;
+  stato.bancomatIsPdf = false;
   $("bancomatAnteprima").classList.add("nascosto");
+  $("bancomatPdfBadge").classList.add("nascosto");
   $("formErrore").classList.add("nascosto");
 }
 
@@ -798,11 +808,24 @@ $("inputBancomat").onchange = async (e) => {
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  const canvas = await caricaImmagine(file);
-  stato.bancomatB64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-  const mini = $("bancomatAnteprima");
-  mini.src = "data:image/jpeg;base64," + stato.bancomatB64;
-  mini.classList.remove("nascosto");
+  const mini = $("bancomatAnteprima"), badge = $("bancomatPdfBadge");
+  try {
+    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
+      stato.bancomatB64 = await fileInBase64(file);
+      stato.bancomatIsPdf = true;
+      mini.classList.add("nascosto");
+      badge.classList.remove("nascosto");
+    } else {
+      const canvas = await caricaImmagine(file);
+      stato.bancomatB64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+      stato.bancomatIsPdf = false;
+      mini.src = "data:image/jpeg;base64," + stato.bancomatB64;
+      mini.classList.remove("nascosto");
+      badge.classList.add("nascosto");
+    }
+  } catch (err) {
+    alert("Errore: " + err.message);
+  }
 };
 
 $("btnAnnulla").onclick = () => mostra("vistaHome");
@@ -812,13 +835,11 @@ $("btnSalva").onclick = async () => {
   btn.disabled = true;
   $("formErrore").classList.add("nascosto");
   try {
-    const r = await api({
+    const corpo = {
       action: "salva",
       foto: stato.fotoB64,
       fotoMime: "image/jpeg",
       pdf: stato.pdfB64,
-      fotoBancomat: stato.bancomatB64,
-      fotoBancomatMime: "image/jpeg",
       data: $("fData").value,
       totale: $("fTotale").value,
       negozio: $("fNegozio").value,
@@ -827,7 +848,12 @@ $("btnSalva").onclick = async () => {
       ospitiEsterni: $("fOspEst").value,
       note: $("fNote").value,
       testo: stato.testoAi
-    });
+    };
+    if (stato.bancomatB64){
+      if (stato.bancomatIsPdf) corpo.pdfBancomat = stato.bancomatB64;
+      else { corpo.fotoBancomat = stato.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
+    }
+    const r = await api(corpo);
     if (!r.ok) throw new Error(r.errore || "Salvataggio fallito");
     const banner = $("bannerOk");
     banner.textContent = "✅ Spesa salvata (riga " + r.riga + ")";
@@ -845,10 +871,10 @@ $("btnSalva").onclick = async () => {
 
 // ---------- modifica di una spesa già salvata ----------
 // spesa = oggetto restituito da "cerca" (con .riga); origine = vista di provenienza
-let modifica = { riga: null, fotoB64: null, bancomatB64: null, origine: "vistaHome" };
+let modifica = { riga: null, fotoB64: null, bancomatB64: null, bancomatIsPdf: false, origine: "vistaHome" };
 
 function apriModifica(spesa, origine){
-  modifica = { riga: spesa.riga, fotoB64: null, bancomatB64: null, origine };
+  modifica = { riga: spesa.riga, fotoB64: null, bancomatB64: null, bancomatIsPdf: false, origine };
   $("mData").value = spesa.data || "";
   $("mTotale").value = spesa.totale || "";
   $("mNegozio").value = spesa.negozio || "";
@@ -867,6 +893,7 @@ function apriModifica(spesa, origine){
   $("mNote").value = spesa.note || "";
   $("mFotoAnteprima").classList.add("nascosto");
   $("mBancomatAnteprima").classList.add("nascosto");
+  $("mBancomatPdfBadge").classList.add("nascosto");
   $("mErrore").classList.add("nascosto");
   mostra("vistaModifica");
 }
@@ -889,7 +916,30 @@ async function caricaNuovaImmagine(e, campo, anteprimaId){
   }
 }
 $("inputMFoto").onchange = (e) => caricaNuovaImmagine(e, "fotoB64", "mFotoAnteprima");
-$("inputMBancomat").onchange = (e) => caricaNuovaImmagine(e, "bancomatB64", "mBancomatAnteprima");
+
+$("inputMBancomat").onchange = async (e) => {
+  const file = e.target.files[0];
+  e.target.value = "";
+  if (!file) return;
+  const mini = $("mBancomatAnteprima"), badge = $("mBancomatPdfBadge");
+  try {
+    if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
+      modifica.bancomatB64 = await fileInBase64(file);
+      modifica.bancomatIsPdf = true;
+      mini.classList.add("nascosto");
+      badge.classList.remove("nascosto");
+    } else {
+      const canvas = await caricaImmagine(file);
+      modifica.bancomatB64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+      modifica.bancomatIsPdf = false;
+      mini.src = "data:image/jpeg;base64," + modifica.bancomatB64;
+      mini.classList.remove("nascosto");
+      badge.classList.add("nascosto");
+    }
+  } catch (err) {
+    alert("Errore: " + err.message);
+  }
+};
 
 $("btnAnnullaMod").onclick = () => mostra(modifica.origine);
 
@@ -910,7 +960,10 @@ $("btnSalvaMod").onclick = async () => {
       note: $("mNote").value
     };
     if (modifica.fotoB64){ corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
-    if (modifica.bancomatB64){ corpo.fotoBancomat = modifica.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
+    if (modifica.bancomatB64){
+      if (modifica.bancomatIsPdf) corpo.pdfBancomat = modifica.bancomatB64;
+      else { corpo.fotoBancomat = modifica.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
+    }
     const r = await api(corpo);
     if (!r.ok) throw new Error(r.errore || "Aggiornamento fallito");
     mostra(modifica.origine);
