@@ -40,6 +40,7 @@
   }
   .btn-primario{ background:var(--verde); color:#fff; }
   .btn-secondario{ background:#E8F0E8; color:var(--verde); margin-top:10px; }
+  .btn-pericolo{ background:#FBE9E9; color:var(--rosso); margin-top:10px; }
   .btn:disabled{ opacity:.5; }
   label{ display:block; font-size:.82rem; color:var(--grigio); margin:12px 0 4px; font-weight:600; }
   input,select,textarea{
@@ -182,7 +183,7 @@
   <!-- ======== FORM CONFERMA ======== -->
   <section id="vistaForm" class="card nascosto">
     <img id="fotoAnteprima" class="anteprima nascosto" alt="anteprima scontrino">
-    <p id="etichettaPdf" class="centro nascosto" style="margin-top:6px">📄 PDF allegato — i dati verranno estratti dall'AI dopo il salvataggio</p>
+    <p id="etichettaPdf" class="centro nascosto" style="margin-top:6px">📄 PDF allegato</p>
     <span id="badgeAi" class="badge-ai nascosto">✨ compilato dall'AI — verifica</span>
 
     <div class="riga-doppia">
@@ -290,6 +291,7 @@
     <div style="margin-top:18px">
       <button class="btn btn-primario" id="btnSalvaMod">💾 Salva modifiche</button>
       <button class="btn btn-secondario" id="btnAnnullaMod">Annulla</button>
+      <button class="btn btn-pericolo" id="btnEliminaMod">🗑️ Elimina spesa</button>
     </div>
     <p id="mErrore" class="errore nascosto"></p>
   </section>
@@ -751,7 +753,16 @@ $("inputPdf").onchange = async (e) => {
     stato.pdfB64 = await fileInBase64(file);
     $("fotoAnteprima").classList.add("nascosto");
     $("etichettaPdf").classList.remove("nascosto");
-    preparaForm(null);
+
+    // stessa esperienza delle foto: l'AI legge il PDF e precompila il form
+    mostra("vistaAnalisi");
+    let dati = null;
+    try {
+      const r = await api({ action: "analizza", pdf: stato.pdfB64 });
+      if (r.ok) dati = r.dati;
+    } catch (errAi) { /* analisi fallita: si compila a mano */ }
+
+    preparaForm(dati);
     mostra("vistaForm");
   } catch (err) {
     alert("Errore: " + err.message);
@@ -898,6 +909,31 @@ $("btnSalvaMod").onclick = async () => {
     if (modifica.origine === "vistaElenco") caricaElenco();
     const banner = $("bannerOk");
     banner.textContent = "✅ Spesa aggiornata (riga " + r.riga + ")";
+    banner.classList.remove("nascosto");
+    setTimeout(() => banner.classList.add("nascosto"), 5000);
+  } catch (err) {
+    const el = $("mErrore");
+    el.textContent = err.message;
+    el.classList.remove("nascosto");
+  } finally {
+    btn.disabled = false;
+  }
+};
+
+$("btnEliminaMod").onclick = async () => {
+  if (!confirm("Eliminare definitivamente questa spesa?\nI file collegati (foto, PDF) verranno spostati nel cestino.")) return;
+  const btn = $("btnEliminaMod");
+  btn.disabled = true;
+  $("mErrore").classList.add("nascosto");
+  try {
+    const r = await api({ action: "elimina", riga: modifica.riga });
+    if (!r.ok) throw new Error(r.errore || "Eliminazione fallita");
+    mostra(modifica.origine);
+    // i numeri di riga in cache cambiano dopo la cancellazione: ricarico l'elenco
+    if (modifica.origine === "vistaElenco") caricaElenco();
+    else if (modifica.origine === "vistaCerca") $("btnCerca").onclick();
+    const banner = $("bannerOk");
+    banner.textContent = "🗑️ Spesa eliminata";
     banner.classList.remove("nascosto");
     setTimeout(() => banner.classList.add("nascosto"), 5000);
   } catch (err) {
