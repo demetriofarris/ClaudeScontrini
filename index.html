@@ -282,17 +282,18 @@
     <label>Note</label>
     <textarea id="mNote"></textarea>
 
-    <label>Sostituisci immagini — facoltativo</label>
+    <label>Sostituisci scontrino / pagamento (foto o PDF) — facoltativo</label>
     <div style="display:flex;align-items:center;gap:10px">
-      <button class="btn btn-secondario" id="btnMFoto" style="margin-top:0;flex:1">📄 Scontrino</button>
+      <button class="btn btn-secondario" id="btnMFoto" style="margin-top:0;flex:1">📄 Scontrino (foto o PDF)</button>
       <img id="mFotoAnteprima" class="mini-foto nascosto" alt="nuova foto scontrino">
+      <span id="mFotoPdfBadge" class="mini-pdf nascosto">📄 PDF</span>
     </div>
     <div style="display:flex;align-items:center;gap:10px;margin-top:8px">
       <button class="btn btn-secondario" id="btnMBancomat" style="margin-top:0;flex:1">💳 Pagamento (foto o PDF)</button>
       <img id="mBancomatAnteprima" class="mini-foto nascosto" alt="nuova foto pagamento">
       <span id="mBancomatPdfBadge" class="mini-pdf nascosto">📄 PDF</span>
     </div>
-    <input id="inputMFoto" class="nascosto" type="file" accept="image/*">
+    <input id="inputMFoto" class="nascosto" type="file" accept="image/*,application/pdf">
     <input id="inputMBancomat" class="nascosto" type="file" accept="image/*,application/pdf">
 
     <div style="margin-top:18px">
@@ -871,10 +872,10 @@ $("btnSalva").onclick = async () => {
 
 // ---------- modifica di una spesa già salvata ----------
 // spesa = oggetto restituito da "cerca" (con .riga); origine = vista di provenienza
-let modifica = { riga: null, fotoB64: null, bancomatB64: null, bancomatIsPdf: false, origine: "vistaHome" };
+let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, origine: "vistaHome" };
 
 function apriModifica(spesa, origine){
-  modifica = { riga: spesa.riga, fotoB64: null, bancomatB64: null, bancomatIsPdf: false, origine };
+  modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, origine };
   $("mData").value = spesa.data || "";
   $("mTotale").value = spesa.totale || "";
   $("mNegozio").value = spesa.negozio || "";
@@ -892,6 +893,7 @@ function apriModifica(spesa, origine){
   $("mOspEst").value = spesa.ospitiEsterni || "";
   $("mNote").value = spesa.note || "";
   $("mFotoAnteprima").classList.add("nascosto");
+  $("mFotoPdfBadge").classList.add("nascosto");
   $("mBancomatAnteprima").classList.add("nascosto");
   $("mBancomatPdfBadge").classList.add("nascosto");
   $("mErrore").classList.add("nascosto");
@@ -901,45 +903,32 @@ function apriModifica(spesa, origine){
 $("btnMFoto").onclick = () => $("inputMFoto").click();
 $("btnMBancomat").onclick = () => $("inputMBancomat").click();
 
-async function caricaNuovaImmagine(e, campo, anteprimaId){
+// carica un nuovo allegato (foto o PDF) per scontrino/pagamento nella vista modifica
+async function caricaNuovoAllegato(e, campoB64, campoPdf, anteprimaId, badgeId){
   const file = e.target.files[0];
   e.target.value = "";
   if (!file) return;
-  try {
-    const canvas = await caricaImmagine(file);
-    modifica[campo] = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-    const mini = $(anteprimaId);
-    mini.src = "data:image/jpeg;base64," + modifica[campo];
-    mini.classList.remove("nascosto");
-  } catch (err) {
-    alert("Errore: " + err.message);
-  }
-}
-$("inputMFoto").onchange = (e) => caricaNuovaImmagine(e, "fotoB64", "mFotoAnteprima");
-
-$("inputMBancomat").onchange = async (e) => {
-  const file = e.target.files[0];
-  e.target.value = "";
-  if (!file) return;
-  const mini = $("mBancomatAnteprima"), badge = $("mBancomatPdfBadge");
+  const mini = $(anteprimaId), badge = $(badgeId);
   try {
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
-      modifica.bancomatB64 = await fileInBase64(file);
-      modifica.bancomatIsPdf = true;
+      modifica[campoB64] = await fileInBase64(file);
+      modifica[campoPdf] = true;
       mini.classList.add("nascosto");
       badge.classList.remove("nascosto");
     } else {
       const canvas = await caricaImmagine(file);
-      modifica.bancomatB64 = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
-      modifica.bancomatIsPdf = false;
-      mini.src = "data:image/jpeg;base64," + modifica.bancomatB64;
+      modifica[campoB64] = canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+      modifica[campoPdf] = false;
+      mini.src = "data:image/jpeg;base64," + modifica[campoB64];
       mini.classList.remove("nascosto");
       badge.classList.add("nascosto");
     }
   } catch (err) {
     alert("Errore: " + err.message);
   }
-};
+}
+$("inputMFoto").onchange = (e) => caricaNuovoAllegato(e, "fotoB64", "fotoIsPdf", "mFotoAnteprima", "mFotoPdfBadge");
+$("inputMBancomat").onchange = (e) => caricaNuovoAllegato(e, "bancomatB64", "bancomatIsPdf", "mBancomatAnteprima", "mBancomatPdfBadge");
 
 $("btnAnnullaMod").onclick = () => mostra(modifica.origine);
 
@@ -959,7 +948,10 @@ $("btnSalvaMod").onclick = async () => {
       ospitiEsterni: $("mOspEst").value,
       note: $("mNote").value
     };
-    if (modifica.fotoB64){ corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
+    if (modifica.fotoB64){
+      if (modifica.fotoIsPdf) corpo.pdf = modifica.fotoB64;
+      else { corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
+    }
     if (modifica.bancomatB64){
       if (modifica.bancomatIsPdf) corpo.pdfBancomat = modifica.bancomatB64;
       else { corpo.fotoBancomat = modifica.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
