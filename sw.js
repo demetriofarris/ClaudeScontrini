@@ -1,4 +1,4 @@
-const CACHE = "scontrini-v12";
+const CACHE = "scontrini-v13";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {

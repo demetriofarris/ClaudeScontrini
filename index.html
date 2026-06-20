@@ -254,6 +254,7 @@
   <!-- ======== MODIFICA SPESA SALVATA ======== -->
   <section id="vistaModifica" class="card nascosto">
     <h2>✏️ Modifica spesa</h2>
+    <p id="mBadgeAi" class="centro nascosto" style="font-size:.82rem;font-weight:600;color:var(--verde);margin-bottom:8px"></p>
 
     <div class="riga-doppia">
       <div>
@@ -387,8 +388,8 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.5.3",
-  data: "15/06/2026",
+  versione: "4.5.4",
+  data: "17/06/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
 
@@ -888,10 +889,10 @@ $("btnSalva").onclick = async () => {
 
 // ---------- modifica di una spesa già salvata ----------
 // spesa = oggetto restituito da "cerca" (con .riga); origine = vista di provenienza
-let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, origine: "vistaHome" };
+let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine: "vistaHome" };
 
 function apriModifica(spesa, origine){
-  modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, origine };
+  modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine };
   $("mData").value = spesa.data || "";
   $("mTotale").value = spesa.totale || "";
   $("mNegozio").value = spesa.negozio || "";
@@ -912,18 +913,58 @@ function apriModifica(spesa, origine){
   $("mFotoPdfBadge").classList.add("nascosto");
   $("mBancomatAnteprima").classList.add("nascosto");
   $("mBancomatPdfBadge").classList.add("nascosto");
+  $("mBadgeAi").classList.add("nascosto");
   $("mErrore").classList.add("nascosto");
   mostra("vistaModifica");
+}
+
+// imposta la categoria nel select gestendo eventuali categorie storiche fuori elenco
+function impostaCategoriaModifica(cat){
+  const sel = $("mCategoria");
+  if (cat && ![...sel.options].some(o => o.value === cat)){
+    const o = document.createElement("option");
+    o.value = o.textContent = cat;
+    o.dataset.temp = "1";
+    sel.appendChild(o);
+  }
+  sel.value = cat || "Altro";
+}
+
+// ri-scansiona con l'AI la nuova immagine/PDF dello scontrino e aggiorna i campi
+async function riscansionaScontrinoModifica(){
+  const badge = $("mBadgeAi");
+  badge.textContent = "🔄 Ri-scansione AI in corso…";
+  badge.classList.remove("nascosto");
+  try {
+    const corpo = { action: "analizza" };
+    if (modifica.fotoIsPdf) corpo.pdf = modifica.fotoB64;
+    else { corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
+    const r = await api(corpo);
+    if (r.ok && r.dati){
+      const d = r.dati;
+      if (d.data)    $("mData").value = d.data;
+      if (d.totale)  $("mTotale").value = d.totale;
+      if (d.negozio) $("mNegozio").value = d.negozio;
+      if (d.categoria) impostaCategoriaModifica(d.categoria);
+      modifica.testoAi = d.testo || "";
+      badge.textContent = "✨ Campi aggiornati dall'AI — verifica e salva";
+    } else {
+      badge.textContent = "⚠️ Ri-scansione non riuscita: correggi i campi a mano";
+    }
+  } catch (err) {
+    badge.textContent = "⚠️ Ri-scansione non riuscita: " + err.message;
+  }
 }
 
 $("btnMFoto").onclick = () => $("inputMFoto").click();
 $("btnMBancomat").onclick = () => $("inputMBancomat").click();
 
-// carica un nuovo allegato (foto o PDF) per scontrino/pagamento nella vista modifica
+// carica un nuovo allegato (foto o PDF) per scontrino/pagamento nella vista
+// modifica. Restituisce true se un file è stato effettivamente caricato.
 async function caricaNuovoAllegato(e, campoB64, campoPdf, anteprimaId, badgeId){
   const file = e.target.files[0];
   e.target.value = "";
-  if (!file) return;
+  if (!file) return false;
   const mini = $(anteprimaId), badge = $(badgeId);
   try {
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
@@ -939,11 +980,19 @@ async function caricaNuovoAllegato(e, campoB64, campoPdf, anteprimaId, badgeId){
       mini.classList.remove("nascosto");
       badge.classList.add("nascosto");
     }
+    return true;
   } catch (err) {
     alert("Errore: " + err.message);
+    return false;
   }
 }
-$("inputMFoto").onchange = (e) => caricaNuovoAllegato(e, "fotoB64", "fotoIsPdf", "mFotoAnteprima", "mFotoPdfBadge");
+
+// sostituendo lo SCONTRINO si ri-scansiona con l'AI e si aggiornano i campi
+$("inputMFoto").onchange = async (e) => {
+  const caricato = await caricaNuovoAllegato(e, "fotoB64", "fotoIsPdf", "mFotoAnteprima", "mFotoPdfBadge");
+  if (caricato) await riscansionaScontrinoModifica();
+};
+// il PAGAMENTO è solo prova di pagamento: niente ri-scansione
 $("inputMBancomat").onchange = (e) => caricaNuovoAllegato(e, "bancomatB64", "bancomatIsPdf", "mBancomatAnteprima", "mBancomatPdfBadge");
 
 $("btnAnnullaMod").onclick = () => mostra(modifica.origine);
@@ -968,6 +1017,8 @@ $("btnSalvaMod").onclick = async () => {
       if (modifica.fotoIsPdf) corpo.pdf = modifica.fotoB64;
       else { corpo.foto = modifica.fotoB64; corpo.fotoMime = "image/jpeg"; }
     }
+    // trascrizione aggiornata: inviata solo dopo una ri-scansione dello scontrino
+    if (modifica.testoAi !== null && modifica.testoAi !== undefined) corpo.testo = modifica.testoAi;
     if (modifica.bancomatB64){
       if (modifica.bancomatIsPdf) corpo.pdfBancomat = modifica.bancomatB64;
       else { corpo.fotoBancomat = modifica.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }

@@ -2,6 +2,9 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.5.4 — 17/06/2026
+- In **Modifica spesa**, sostituendo l'immagine (o il PDF) dello scontrino l'app ora **ri-scansiona con l'AI** e aggiorna automaticamente data, totale, negozio e categoria (poi li rivedi e salvi). Il pagamento/bancomat resta solo prova, senza ri-scansione.
+
 ## v4.5.3 — 15/06/2026
 - In **Modifica spesa** lo scontrino può essere sostituito anche con un **PDF** (oltre che con una foto). Cambiando tipo, la versione precedente viene rimossa.
 
