@@ -116,6 +116,11 @@
   .tabella-spese tbody tr:not(.riga-totale){ cursor:pointer; }
   .voce-lista[data-riga]{ cursor:pointer; }
   .hint-modifica{ font-size:.75rem; color:var(--grigio); text-align:center; margin-top:8px; }
+  .versione-info{
+    font-size:.78rem; color:var(--grigio); text-align:center;
+    margin-top:18px; padding-top:14px; border-top:1px solid #EEE; line-height:1.7;
+  }
+  .versione-info a{ color:var(--verde); font-weight:600; text-decoration:none; }
 </style>
 </head>
 <body>
@@ -141,6 +146,10 @@
       <button class="btn btn-primario" id="btnSalvaCfg">Salva e verifica</button>
     </div>
     <p id="cfgEsito" class="centro" style="margin-top:10px"></p>
+    <p class="versione-info">
+      App v<span id="appVersione"></span> · <span id="appData"></span><br>
+      <a id="linkChangelog" target="_blank" rel="noopener">📋 Novità e changelog</a>
+    </p>
   </section>
 
   <!-- ======== HOME ======== -->
@@ -374,6 +383,13 @@ const cfg = {
   set url(v){ localStorage.setItem("gs_url", v); },
   get token(){ return localStorage.getItem("gs_token") || ""; },
   set token(v){ localStorage.setItem("gs_token", v); }
+};
+
+// ---------- versione app ----------
+const APP = {
+  versione: "4.5.3",
+  data: "15/06/2026",
+  changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
 
 // ---------- stato corrente ----------
@@ -1225,6 +1241,10 @@ $("btnSalvaCfg").onclick = async () => {
 };
 
 // ---------- avvio ----------
+$("appVersione").textContent = APP.versione;
+$("appData").textContent = APP.data;
+$("linkChangelog").href = APP.changelog;
+
 if (!cfg.url) mostra("vistaImpostazioni");
 else mostra("vistaHome");
 
