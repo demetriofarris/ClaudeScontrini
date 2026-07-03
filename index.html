@@ -210,6 +210,7 @@
         <input id="fTotale" type="text" inputmode="decimal" placeholder="€ 12,34">
       </div>
     </div>
+    <p id="fDataHint" class="errore nascosto" style="margin-top:6px;text-align:left"></p>
 
     <label>Negozio</label>
     <input id="fNegozio" type="text" placeholder="Nome esercizio">
@@ -266,6 +267,7 @@
         <input id="mTotale" type="text" inputmode="decimal" placeholder="€ 12,34">
       </div>
     </div>
+    <p id="mDataHint" class="errore nascosto" style="margin-top:6px;text-align:left"></p>
 
     <label>Negozio</label>
     <input id="mNegozio" type="text">
@@ -388,8 +390,8 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.5.4",
-  data: "17/06/2026",
+  versione: "4.5.5",
+  data: "03/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
 
@@ -802,10 +804,32 @@ $("inputPdf").onchange = async (e) => {
   }
 };
 
+// ---------- controllo data anomala ----------
+// Una spesa è di norma del mese corrente o vicino: se la data dista più di un
+// mese da oggi (tipico: anno letto male dallo scontrino sbiadito, es. 2023
+// invece di 2026), l'avviso la rende evidente prima del salvataggio.
+function controllaDataAnomala(valore, hintId){
+  const hint = $(hintId);
+  let msg = "";
+  const m = String(valore || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (m){
+    const oggi = new Date();
+    const diffMesi = (oggi.getFullYear() * 12 + oggi.getMonth()) - ((+m[3]) * 12 + (+m[2] - 1));
+    if (diffMesi > 1 || diffMesi < -1){
+      msg = "⚠️ Data lontana da oggi: controlla l'anno (" + m[3] + ")";
+    }
+  }
+  hint.textContent = msg;
+  hint.classList.toggle("nascosto", !msg);
+}
+$("fData").oninput = () => controllaDataAnomala($("fData").value, "fDataHint");
+$("mData").oninput = () => controllaDataAnomala($("mData").value, "mDataHint");
+
 // ---------- form ----------
 function preparaForm(dati){
   $("badgeAi").classList.toggle("nascosto", !dati);
   $("fData").value = dati?.data || "";
+  controllaDataAnomala($("fData").value, "fDataHint");
   $("fTotale").value = dati?.totale || "";
   $("fNegozio").value = dati?.negozio || "";
   $("fCategoria").value = dati?.categoria || "Altro";
@@ -894,6 +918,7 @@ let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null,
 function apriModifica(spesa, origine){
   modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine };
   $("mData").value = spesa.data || "";
+  controllaDataAnomala($("mData").value, "mDataHint");
   $("mTotale").value = spesa.totale || "";
   $("mNegozio").value = spesa.negozio || "";
   // categorie storiche fuori elenco (es. "Ristoranti/Bar"): aggiunte come opzione temporanea
@@ -942,7 +967,7 @@ async function riscansionaScontrinoModifica(){
     const r = await api(corpo);
     if (r.ok && r.dati){
       const d = r.dati;
-      if (d.data)    $("mData").value = d.data;
+      if (d.data){ $("mData").value = d.data; controllaDataAnomala(d.data, "mDataHint"); }
       if (d.totale)  $("mTotale").value = d.totale;
       if (d.negozio) $("mNegozio").value = d.negozio;
       if (d.categoria) impostaCategoriaModifica(d.categoria);

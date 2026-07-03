@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.5.5 — 03/07/2026
+- **Avviso data anomala**: se la data letta dallo scontrino è lontana più di un mese da oggi (tipico anno sbagliato su stampe sbiadite), il form la segnala in rosso prima del salvataggio.
+- Istruzioni AI più severe sulla lettura dell'**anno** della data.
+- **Auto-riparazione** del foglio se compare una riga vuota sopra le intestazioni (rompeva elenco e ricerche); il salvataggio ora dà un errore chiaro invece di scrivere una riga vuota.
+
 ## v4.5.4 — 17/06/2026
 - In **Modifica spesa**, sostituendo l'immagine (o il PDF) dello scontrino l'app ora **ri-scansiona con l'AI** e aggiorna automaticamente data, totale, negozio e categoria (poi li rivedi e salvi). Il pagamento/bancomat resta solo prova, senza ri-scansione.
 
