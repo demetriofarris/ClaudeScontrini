@@ -65,6 +65,10 @@
     background:#E6F4E6; color:var(--verde); border-radius:12px; padding:14px;
     text-align:center; font-weight:600; margin-bottom:16px;
   }
+  .warn-banner{
+    background:#FFF3CD; color:#7A5A00; border-radius:12px; padding:12px 14px;
+    text-align:center; font-weight:600; margin-bottom:16px; font-size:.85rem;
+  }
   .badge-ai{
     display:inline-block; background:#FFF3CD; color:#7A5A00; font-size:.72rem;
     padding:3px 8px; border-radius:99px; font-weight:600; margin-left:6px; vertical-align:middle;
@@ -133,6 +137,7 @@
 <main>
 
   <div id="bannerOk" class="ok-banner nascosto"></div>
+  <div id="bannerWarn" class="warn-banner nascosto"></div>
 
   <!-- ======== IMPOSTAZIONI ======== -->
   <section id="vistaImpostazioni" class="card nascosto">
@@ -390,10 +395,24 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.5.5",
+  versione: "4.6.0",
   data: "03/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
+
+// Avvisa se il backend Apps Script è rimasto a una versione diversa dall'app
+// (causa tipica di "non funziona": codice ricopiato ma distribuzione non
+// aggiornata, o viceversa)
+function verificaVersioneBackend(versioneBackend){
+  const warn = document.getElementById("bannerWarn");
+  if (versioneBackend && versioneBackend !== APP.versione){
+    warn.textContent = "⚠️ Backend v" + versioneBackend + " ≠ app v" + APP.versione +
+      " — ricopia gestione_scontrini.js in Apps Script e crea una nuova versione della distribuzione";
+    warn.classList.remove("nascosto");
+  } else {
+    warn.classList.add("nascosto");
+  }
+}
 
 // ---------- stato corrente ----------
 let stato = { fotoB64: null, pdfB64: null, bancomatB64: null, bancomatIsPdf: false, testoAi: "" };
@@ -443,6 +462,17 @@ function fileInBase64(file){
     r.onerror = () => reject(new Error("File non leggibile"));
     r.readAsDataURL(file);
   });
+}
+
+// Oltre ~20MB il PDF (in base64 +33%) supera i limiti di Apps Script/Claude
+// con errori poco chiari: meglio fermarsi subito con un messaggio esplicito
+function pdfTroppoGrande(file){
+  const MAX_MB = 20;
+  if (file.size > MAX_MB * 1024 * 1024){
+    alert("PDF troppo grande (" + Math.round(file.size / 1024 / 1024) + " MB): il limite è " + MAX_MB + " MB. Riduci il PDF o usa una foto.");
+    return true;
+  }
+  return false;
 }
 
 // ---------- scansione B/N (binarizzazione adattiva di Bradley) ----------
@@ -717,6 +747,7 @@ function aggiornaAnteprimaEditor(){
 
 // ---------- flusso PDF condiviso (tasto "Carica PDF" e PDF da "Foto scontrino") ----------
 async function gestisciPdf(file){
+  if (pdfTroppoGrande(file)) return;
   stato = { fotoB64: null, pdfB64: null, bancomatB64: null, bancomatIsPdf: false, testoAi: "" };
   stato.pdfB64 = await fileInBase64(file);
   $("fotoAnteprima").classList.add("nascosto");
@@ -853,6 +884,7 @@ $("inputBancomat").onchange = async (e) => {
   const mini = $("bancomatAnteprima"), badge = $("bancomatPdfBadge");
   try {
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
+      if (pdfTroppoGrande(file)) return;
       stato.bancomatB64 = await fileInBase64(file);
       stato.bancomatIsPdf = true;
       mini.classList.add("nascosto");
@@ -895,7 +927,13 @@ $("btnSalva").onclick = async () => {
       if (stato.bancomatIsPdf) corpo.pdfBancomat = stato.bancomatB64;
       else { corpo.fotoBancomat = stato.bancomatB64; corpo.fotoBancomatMime = "image/jpeg"; }
     }
-    const r = await api(corpo);
+    let r = await api(corpo);
+    // possibile doppio invio: stessa data+totale+negozio già nel foglio
+    if (!r.ok && r.duplicato){
+      if (!confirm("⚠️ " + r.errore + "\n\nSalvare comunque?")) return; // resta nel form
+      corpo.forzaDuplicato = true;
+      r = await api(corpo);
+    }
     if (!r.ok) throw new Error(r.errore || "Salvataggio fallito");
     const banner = $("bannerOk");
     banner.textContent = "✅ Spesa salvata (riga " + r.riga + ")";
@@ -916,7 +954,10 @@ $("btnSalva").onclick = async () => {
 let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine: "vistaHome" };
 
 function apriModifica(spesa, origine){
-  modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine };
+  modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine,
+               // impronta della spesa ORIGINALE: il backend verifica che la riga
+               // corrisponda ancora prima di modificarla/eliminarla
+               rifData: spesa.data || "", rifTotale: spesa.totale || "" };
   $("mData").value = spesa.data || "";
   controllaDataAnomala($("mData").value, "mDataHint");
   $("mTotale").value = spesa.totale || "";
@@ -993,6 +1034,7 @@ async function caricaNuovoAllegato(e, campoB64, campoPdf, anteprimaId, badgeId){
   const mini = $(anteprimaId), badge = $(badgeId);
   try {
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
+      if (pdfTroppoGrande(file)) return false;
       modifica[campoB64] = await fileInBase64(file);
       modifica[campoPdf] = true;
       mini.classList.add("nascosto");
@@ -1030,6 +1072,8 @@ $("btnSalvaMod").onclick = async () => {
     const corpo = {
       action: "aggiorna",
       riga: modifica.riga,
+      rifData: modifica.rifData,
+      rifTotale: modifica.rifTotale,
       data: $("mData").value,
       totale: $("mTotale").value,
       negozio: $("mNegozio").value,
@@ -1071,7 +1115,7 @@ $("btnEliminaMod").onclick = async () => {
   btn.disabled = true;
   $("mErrore").classList.add("nascosto");
   try {
-    const r = await api({ action: "elimina", riga: modifica.riga });
+    const r = await api({ action: "elimina", riga: modifica.riga, rifData: modifica.rifData, rifTotale: modifica.rifTotale });
     if (!r.ok) throw new Error(r.errore || "Eliminazione fallita");
     mostra(modifica.origine);
     // i numeri di riga in cache cambiano dopo la cancellazione: ricarico l'elenco
@@ -1310,7 +1354,10 @@ $("btnSalvaCfg").onclick = async () => {
   try {
     const r = await api({ action: "ping" });
     esito.textContent = r.ok ? "✅ Connesso (backend v" + r.versione + ")" : "❌ " + (r.errore || "Errore");
-    if (r.ok) setTimeout(() => mostra("vistaHome"), 800);
+    if (r.ok){
+      verificaVersioneBackend(r.versione);
+      setTimeout(() => mostra("vistaHome"), 800);
+    }
   } catch (err) {
     esito.textContent = "❌ " + err.message;
   }
@@ -1322,7 +1369,13 @@ $("appData").textContent = APP.data;
 $("linkChangelog").href = APP.changelog;
 
 if (!cfg.url) mostra("vistaImpostazioni");
-else mostra("vistaHome");
+else {
+  mostra("vistaHome");
+  // controllo silenzioso in background dell'allineamento app/backend
+  api({ action: "ping" })
+    .then(r => { if (r.ok) verificaVersioneBackend(r.versione); })
+    .catch(() => {});
+}
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("sw.js").catch(() => {});

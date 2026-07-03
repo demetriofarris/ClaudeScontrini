@@ -2,6 +2,13 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.6.0 — 03/07/2026
+- **Totale del mese sempre completo**: l'elenco non è più limitato a 50 spese (il limite resta solo per la ricerca testuale).
+- **Protezione anti-duplicato**: se salvi una spesa identica a una già presente (stessa data, totale e negozio), l'app chiede conferma prima di procedere.
+- **Avviso versione**: se il backend Apps Script non è allineato all'app, compare un banner con le istruzioni.
+- **Modifica/eliminazione più sicure**: l'app verifica che la riga corrisponda ancora alla spesa selezionata prima di agire.
+- Estrazione AI più robusta su scontrini con testi lunghi; limite esplicito di 20 MB sui PDF caricati.
+
 ## v4.5.5 — 03/07/2026
 - **Avviso data anomala**: se la data letta dallo scontrino è lontana più di un mese da oggi (tipico anno sbagliato su stampe sbiadite), il form la segnala in rosso prima del salvataggio.
 - Istruzioni AI più severe sulla lettura dell'**anno** della data.
