@@ -1,5 +1,9 @@
 // ============================================================================
-// GESTIONE SCONTRINI - VERSIONE 4.7.0 (PROGETTO STANDALONE PARALLELO)
+// GESTIONE SCONTRINI - VERSIONE 4.8.0 (PROGETTO STANDALONE PARALLELO)
+// + RESTYLE v4.8: PDF di chiusura mese ridisegnato "aziendale" — palette sobria
+//   (un solo accento navy, niente blu/verde acceso), tabella riepilogativa nuova,
+//   titolo "NOTA SPESE" + mese esteso, niente emoji, piè di pagina; immagini
+//   degli scontrini invariate (leggibilità preservata). Helper _cella/_stileCella.
 // + NEW v4.7: statistiche — cercaSpese accetta periodo "yyyy" (anno intero) oltre
 //   a "yyyy-MM"; restituisce anche il flag haAllegati per riga
 // + NEW v4.7: azione doPost "allegati" (URL Drive di foto/PDF di una spesa)
@@ -306,6 +310,57 @@ function impostaLandscape(doc) {
   const body = doc.getBody();
   body.setPageWidth(841.89).setPageHeight(595.28);
   body.setMarginTop(30).setMarginBottom(30).setMarginLeft(30).setMarginRight(30);
+}
+
+
+// ===================== STILE PDF (sobrio / aziendale) ====================
+// Palette neutra con UN solo accento (navy). Niente blu/verde acceso.
+const PDF_STY = {
+  NAVY:   "#1F3A5F",   // accento: intestazioni tabella, filetti, etichette forti
+  TESTO:  "#1A1A1A",   // testo principale
+  GRIGIO: "#5F6B7A",   // testo secondario
+  BORDO:  "#AEB6C2",   // bordo tabella (hairline)
+  ZEBRA:  "#F5F7FA",   // riga alternata (grigio quasi impercettibile)
+  TOTALE: "#E6EBF2",   // fascia riga/box totale
+  SERIF:  "Georgia",   // titoli (letterhead)
+  SANS:   "Arial"      // testo e tabelle
+};
+const MESI_IT = ["gennaio","febbraio","marzo","aprile","maggio","giugno",
+                 "luglio","agosto","settembre","ottobre","novembre","dicembre"];
+
+// "2026-06" → "Giugno 2026"
+function _periodoEsteso(periodo){
+  const m = String(periodo).match(/^(\d{4})-(\d{2})$/);
+  if (!m) return periodo;
+  const nome = MESI_IT[parseInt(m[2],10)-1] || "";
+  return (nome.charAt(0).toUpperCase()+nome.slice(1)) + " " + m[1];
+}
+
+// Scrive un paragrafo stilizzato in una cella riusando il paragrafo vuoto di
+// default alla prima chiamata (così non restano righe vuote sopra il testo).
+function _cella(cell, text, o){
+  o = o || {};
+  const primo = cell.getNumChildren() === 1
+             && cell.getChild(0).getType() === DocumentApp.ElementType.PARAGRAPH
+             && cell.getChild(0).asParagraph().getText() === "";
+  const p = primo ? cell.getChild(0).asParagraph() : cell.appendParagraph("");
+  p.setText(text == null ? "" : String(text));
+  p.setFontFamily(o.font || PDF_STY.SANS).setFontSize(o.size || 9)
+   .setBold(!!o.bold).setItalic(!!o.italic);
+  if (o.align) p.setAlignment(o.align);
+  if (o.spaceAfter != null) p.setSpacingAfter(o.spaceAfter);
+  p.editAsText().setForegroundColor(o.color || PDF_STY.TESTO);
+  return p;
+}
+
+// Padding / sfondo / larghezza / allineamento verticale di una cella.
+function _stileCella(cell, o){
+  o = o || {};
+  cell.setPaddingTop(o.pt != null ? o.pt : 5).setPaddingBottom(o.pb != null ? o.pb : 5)
+      .setPaddingLeft(o.pl != null ? o.pl : 8).setPaddingRight(o.pr != null ? o.pr : 8);
+  if (o.bg) cell.setBackgroundColor(o.bg);
+  if (o.width != null) cell.setWidth(o.width);
+  if (o.valign) cell.setVerticalAlignment(o.valign);
 }
 
 
@@ -855,109 +910,76 @@ function chiudiMeseManuale(anno, mese){
   impostaLandscape(doc);
 
   const body = doc.getBody();
+  const AR = DocumentApp.HorizontalAlignment.RIGHT;
+  const AC = DocumentApp.HorizontalAlignment.CENTER;
 
-  // TITOLO
-  const titolo = body.appendParagraph("RIEPILOGO SPESE " + periodo);
-  titolo.setHeading(DocumentApp.ParagraphHeading.HEADING1);
-  titolo.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  titolo.setFontSize(18);
-  titolo.setSpacingAfter(15);
-  titolo.editAsText().setForegroundColor('#000000');
+  // ---- INTESTAZIONE (letterhead sobrio) ----
+  const titolo = body.appendParagraph("NOTA SPESE");
+  titolo.setFontFamily(PDF_STY.SERIF).setFontSize(20).setBold(true).setSpacingAfter(1);
+  titolo.editAsText().setForegroundColor(PDF_STY.NAVY);
+
+  const sottot = body.appendParagraph(_periodoEsteso(periodo));
+  sottot.setFontFamily(PDF_STY.SERIF).setFontSize(12).setSpacingAfter(6);
+  sottot.editAsText().setForegroundColor(PDF_STY.GRIGIO);
+
+  body.appendHorizontalRule();
 
   const info = body.appendParagraph(
-    `Periodo: ${periodo}  |  Spese: ${righe}  |  Totale: ${formatEuro(tot)}`
+    `Numero spese: ${righe}      Totale: ${formatEuro(tot)}      ` +
+    `Documento generato il ${Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "dd/MM/yyyy")}`
   );
-  info.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
-  info.setFontSize(11);
-  info.setBold(true);
-  info.setSpacingAfter(20);
-  info.editAsText().setForegroundColor('#000000');
+  info.setFontFamily(PDF_STY.SANS).setFontSize(9.5).setSpacingBefore(6).setSpacingAfter(16);
+  info.editAsText().setForegroundColor(PDF_STY.TESTO);
 
-  // TABELLA DETTAGLIO
-  body.appendParagraph("TABELLA RIEPILOGATIVA SPESE")
-    .setHeading(DocumentApp.ParagraphHeading.HEADING2)
-    .setFontSize(14)
-    .setSpacingAfter(10)
-    .editAsText().setForegroundColor('#000000');
+  // ---- TABELLA RIEPILOGATIVA (riprogettata) ----
+  const hSez = body.appendParagraph("RIEPILOGO SPESE");
+  hSez.setFontFamily(PDF_STY.SANS).setFontSize(11).setBold(true).setSpacingAfter(8);
+  hSez.editAsText().setForegroundColor(PDF_STY.NAVY);
 
-  const intro = body.appendParagraph("Elenco completo delle spese del periodo, ordinato per data");
-  intro.setFontSize(10);
-  intro.setItalic(true);
-  intro.setSpacingAfter(15);
-  intro.editAsText().setForegroundColor('#000000');
+  const tbl = body.appendTable();
+  tbl.setBorderWidth(0.75).setBorderColor(PDF_STY.BORDO);
 
-  const tblDettaglio = body.appendTable();
-  tblDettaglio.setBorderWidth(1);
-  tblDettaglio.setBorderColor('#CCCCCC');
-
-  const hRow = tblDettaglio.appendTableRow();
-  const headers_table = ["#", "Data", "Negozio", "Categoria", "Importo (€)"];
-  headers_table.forEach((h, idx) => {
-    const cell = hRow.appendTableCell();
-    const p = cell.appendParagraph(h);
-    p.setBold(true);
-    p.setFontSize(10);
-    p.editAsText().setForegroundColor('#FFFFFF');
-    cell.setBackgroundColor('#2196F3');
-    cell.setPaddingTop(8).setPaddingBottom(8).setPaddingLeft(6).setPaddingRight(6);
-    if (idx === 0) cell.setWidth(35);
-    else if (idx === 1) cell.setWidth(75);
-    else if (idx === 4) cell.setWidth(85);
+  // intestazione tabella (fascia navy, etichette maiuscole)
+  const hr = tbl.appendTableRow();
+  [["N.", AC, 30], ["DATA", null, 78], ["NEGOZIO", null, null],
+   ["CATEGORIA", null, 115], ["IMPORTO", AR, 95]].forEach(([lab, al, w]) => {
+    const c = hr.appendTableCell();
+    _cella(c, lab, { bold: true, size: 8.5, color: "#FFFFFF", align: al });
+    _stileCella(c, { bg: PDF_STY.NAVY, width: w, pt: 6, pb: 6 });
   });
 
+  // righe (zebra leggerissima, importi allineati a destra)
   vociMese.forEach((v, idx) => {
-    const dRow = tblDettaglio.appendTableRow();
-    const bgColor = idx % 2 === 1 ? '#F9F9F9' : null;
+    const row = tbl.appendTableRow();
+    const bg = idx % 2 === 1 ? PDF_STY.ZEBRA : null;
     const cols = [
-      { text: (idx+1).toString(), align: DocumentApp.HorizontalAlignment.CENTER, bold: false },
-      { text: v.data, align: null, bold: false },
-      { text: v.negozio || "N/D", align: null, bold: false },
-      { text: v.categoria, align: null, bold: false },
-      { text: v.importo.toFixed(2).replace(".",","), align: DocumentApp.HorizontalAlignment.RIGHT, bold: true }
+      { t: idx+1,               align: AC, color: PDF_STY.GRIGIO },
+      { t: v.data },
+      { t: v.negozio || "—" },
+      { t: v.categoria,         color: PDF_STY.GRIGIO },
+      { t: formatEuro(v.importo), align: AR }
     ];
     cols.forEach(col => {
-      const cell = dRow.appendTableCell();
-      const p = cell.appendParagraph(col.text);
-      p.setFontSize(9);
-      if (col.bold) p.setBold(true);
-      if (col.align) p.setAlignment(col.align);
-      p.editAsText().setForegroundColor('#000000');
-      cell.setPaddingTop(6).setPaddingBottom(6).setPaddingLeft(6).setPaddingRight(6);
-      if (bgColor) cell.setBackgroundColor(bgColor);
+      const c = row.appendTableCell();
+      _cella(c, col.t, { size: 9, align: col.align, color: col.color });
+      _stileCella(c, { bg: bg, pt: 5, pb: 5 });
     });
   });
 
-  // Riga totale tabella
-  const tRowDett = tblDettaglio.appendTableRow();
-  for (let i = 0; i < 3; i++) {
-    const emptyCell = tRowDett.appendTableCell();
-    emptyCell.setBackgroundColor('#4CAF50');
-    emptyCell.setPaddingTop(10).setPaddingBottom(10).setPaddingLeft(8).setPaddingRight(8);
-  }
-  const tCell1 = tRowDett.appendTableCell();
-  const pTot1 = tCell1.appendParagraph("TOTALE");
-  pTot1.setBold(true).setFontSize(11);
-  pTot1.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-  pTot1.editAsText().setForegroundColor('#FFFFFF');
-  tCell1.setBackgroundColor('#4CAF50');
-  tCell1.setPaddingTop(10).setPaddingBottom(10).setPaddingLeft(8).setPaddingRight(8);
+  // riga TOTALE (fascia grigio chiara, nessun blocco verde)
+  const rTot = tbl.appendTableRow();
+  ["", "", "", "TOTALE", formatEuro(tot)].forEach((t, i) => {
+    const c = rTot.appendTableCell();
+    _cella(c, t, { bold: i >= 3, size: 9.5, align: AR, color: PDF_STY.NAVY });
+    _stileCella(c, { bg: PDF_STY.TOTALE, pt: 7, pb: 7 });
+  });
 
-  const tCell2 = tRowDett.appendTableCell();
-  const pTot2 = tCell2.appendParagraph(tot.toFixed(2).replace(".",","));
-  pTot2.setBold(true).setFontSize(11);
-  pTot2.setAlignment(DocumentApp.HorizontalAlignment.RIGHT);
-  pTot2.editAsText().setForegroundColor('#FFFFFF');
-  tCell2.setBackgroundColor('#4CAF50');
-  tCell2.setPaddingTop(10).setPaddingBottom(10).setPaddingLeft(8).setPaddingRight(8);
-
-  // ===================== DETTAGLIO SPESE CON IMMAGINI =====================
+  // ===================== DETTAGLIO SPESE CON GIUSTIFICATIVI =====================
   body.appendPageBreak();
 
-  body.appendParagraph("DETTAGLIO SPESE CON IMMAGINI")
-    .setHeading(DocumentApp.ParagraphHeading.HEADING2)
-    .setFontSize(14)
-    .setSpacingAfter(8)
-    .editAsText().setForegroundColor('#000000');
+  const hDett = body.appendParagraph("DETTAGLIO SPESE CON GIUSTIFICATIVI");
+  hDett.setFontFamily(PDF_STY.SANS).setFontSize(11).setBold(true).setSpacingAfter(8);
+  hDett.editAsText().setForegroundColor(PDF_STY.NAVY);
 
   // Dimensioni ricavate dalla pagina reale: le immagini non vengono mai
   // tagliate, qualunque siano orientamento e margini effettivi
@@ -970,44 +992,34 @@ function chiudiMeseManuale(anno, mese){
     if (idx > 0) body.appendPageBreak();
 
     // Intestazione voce
-    const intestazione = body.appendParagraph(`${idx+1}. ${v.data} • ${v.negozio}`);
-    intestazione.setBold(true);
-    intestazione.setFontSize(12);
-    intestazione.setSpacingBefore(4);
-    intestazione.setSpacingAfter(2);
-    intestazione.editAsText().setForegroundColor('#000000');
+    const intestazione = body.appendParagraph(`${idx+1}.   ${v.data}   —   ${v.negozio}`);
+    intestazione.setFontFamily(PDF_STY.SANS).setBold(true).setFontSize(12)
+      .setSpacingBefore(4).setSpacingAfter(1);
+    intestazione.editAsText().setForegroundColor(PDF_STY.NAVY);
 
-    const dettaglio = body.appendParagraph(
-      `${v.categoria} • € ${v.importo.toFixed(2).replace(".",",")}`
-    );
-    dettaglio.setFontSize(10);
-    dettaglio.setItalic(true);
-    dettaglio.editAsText().setForegroundColor('#000000');
-    dettaglio.setSpacingAfter(4);
+    const dettaglio = body.appendParagraph(`${v.categoria}    ·    ${formatEuro(v.importo)}`);
+    dettaglio.setFontFamily(PDF_STY.SANS).setFontSize(10).setSpacingAfter(4);
+    dettaglio.editAsText().setForegroundColor(PDF_STY.GRIGIO);
 
     // Ospiti interni (solo se presenti)
     if (v.ospInt) {
-      const pOspInt = body.appendParagraph(`👥 Ospiti interni: ${v.ospInt}`);
-      pOspInt.setFontSize(9);
-      pOspInt.setSpacingAfter(2);
-      pOspInt.editAsText().setForegroundColor('#000000');
+      const pOspInt = body.appendParagraph(`Ospiti interni: ${v.ospInt}`);
+      pOspInt.setFontFamily(PDF_STY.SANS).setFontSize(9).setSpacingAfter(2);
+      pOspInt.editAsText().setForegroundColor(PDF_STY.GRIGIO);
     }
 
     // Ospiti esterni (solo se presenti)
     if (v.ospEst) {
-      const pOspEst = body.appendParagraph(`🤝 Ospiti esterni: ${v.ospEst}`);
-      pOspEst.setFontSize(9);
-      pOspEst.setSpacingAfter(2);
-      pOspEst.editAsText().setForegroundColor('#000000');
+      const pOspEst = body.appendParagraph(`Ospiti esterni: ${v.ospEst}`);
+      pOspEst.setFontFamily(PDF_STY.SANS).setFontSize(9).setSpacingAfter(2);
+      pOspEst.editAsText().setForegroundColor(PDF_STY.GRIGIO);
     }
 
     // Note (solo se presenti)
     if (v.note) {
-      const pNote = body.appendParagraph(`📝 Note: ${v.note}`);
-      pNote.setFontSize(9);
-      pNote.setItalic(true);
-      pNote.setSpacingAfter(6);
-      pNote.editAsText().setForegroundColor('#000000');
+      const pNote = body.appendParagraph(`Note: ${v.note}`);
+      pNote.setFontFamily(PDF_STY.SANS).setFontSize(9).setItalic(true).setSpacingAfter(6);
+      pNote.editAsText().setForegroundColor(PDF_STY.GRIGIO);
     }
 
     if (v.fileImg || v.fileBancomat) {
@@ -1020,11 +1032,11 @@ function chiudiMeseManuale(anno, mese){
       cellRic.setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(6).setPaddingRight(6);
       cellRic.setVerticalAlignment(DocumentApp.VerticalAlignment.TOP);
 
-      const labelRic = cellRic.appendParagraph("📄 RICEVUTA");
-      labelRic.setFontSize(9).setBold(true);
+      const labelRic = cellRic.appendParagraph("RICEVUTA");
+      labelRic.setFontFamily(PDF_STY.SANS).setFontSize(8.5).setBold(true);
       labelRic.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
       labelRic.setSpacingAfter(4);
-      labelRic.editAsText().setForegroundColor('#000000');
+      labelRic.editAsText().setForegroundColor(PDF_STY.NAVY);
 
       if (v.fileImg) {
         try {
@@ -1054,11 +1066,11 @@ function chiudiMeseManuale(anno, mese){
       cellPag.setPaddingTop(4).setPaddingBottom(4).setPaddingLeft(6).setPaddingRight(6);
       cellPag.setVerticalAlignment(DocumentApp.VerticalAlignment.TOP);
 
-      const labelPag = cellPag.appendParagraph("💳 PAGAMENTO");
-      labelPag.setFontSize(9).setBold(true);
+      const labelPag = cellPag.appendParagraph("PAGAMENTO");
+      labelPag.setFontFamily(PDF_STY.SANS).setFontSize(8.5).setBold(true);
       labelPag.setAlignment(DocumentApp.HorizontalAlignment.CENTER);
       labelPag.setSpacingAfter(4);
-      labelPag.editAsText().setForegroundColor('#000000');
+      labelPag.editAsText().setForegroundColor(PDF_STY.NAVY);
 
       if (v.fileBancomat) {
         try {
@@ -1083,104 +1095,82 @@ function chiudiMeseManuale(anno, mese){
       }
 
       tbl.setBorderWidth(0.5);
-      tbl.setBorderColor('#DDDDDD');
+      tbl.setBorderColor(PDF_STY.BORDO);
     }
   });
 
-  // ===================== RIEPILOGO CATEGORIE =====================
+  // ===================== RIEPILOGO PER CATEGORIA =====================
   body.appendPageBreak();
 
-  body.appendParagraph("RIEPILOGO PER CATEGORIA")
-    .setHeading(DocumentApp.ParagraphHeading.HEADING2)
-    .setFontSize(14)
-    .setSpacingAfter(10)
-    .editAsText().setForegroundColor('#000000');
+  const hCat = body.appendParagraph("RIEPILOGO PER CATEGORIA");
+  hCat.setFontFamily(PDF_STY.SANS).setFontSize(11).setBold(true).setSpacingAfter(8);
+  hCat.editAsText().setForegroundColor(PDF_STY.NAVY);
 
   if (Object.keys(sumByCat).length){
     const tblCat = body.appendTable();
-    tblCat.setBorderWidth(1);
-    tblCat.setBorderColor('#CCCCCC');
+    tblCat.setBorderWidth(0.75).setBorderColor(PDF_STY.BORDO);
 
     const hRowCat = tblCat.appendTableRow();
-    const hCell1 = hRowCat.appendTableCell();
-    const pH1 = hCell1.appendParagraph("Categoria");
-    pH1.setBold(true).setFontSize(11);
-    pH1.editAsText().setForegroundColor('#FFFFFF');
-    hCell1.setBackgroundColor('#2196F3');
-    hCell1.setPaddingTop(10).setPaddingBottom(10).setPaddingLeft(12).setPaddingRight(12);
-
-    const hCell2 = hRowCat.appendTableCell();
-    const pH2 = hCell2.appendParagraph("Totale (€)");
-    pH2.setBold(true).setFontSize(11);
-    pH2.editAsText().setForegroundColor('#FFFFFF');
-    hCell2.setBackgroundColor('#2196F3');
-    hCell2.setPaddingTop(10).setPaddingBottom(10).setPaddingLeft(12).setPaddingRight(12);
+    [["CATEGORIA", null, null], ["IMPORTO", AR, 150]].forEach(([lab, al, w]) => {
+      const c = hRowCat.appendTableCell();
+      _cella(c, lab, { bold: true, size: 8.5, color: "#FFFFFF", align: al });
+      _stileCella(c, { bg: PDF_STY.NAVY, width: w, pt: 6, pb: 6, pl: 10, pr: 10 });
+    });
 
     Object.entries(sumByCat).sort((a,b)=>b[1]-a[1]).forEach(([cat,val], idx)=>{
       const dRow = tblCat.appendTableRow();
-      const bg = idx%2===1 ? '#F9F9F9' : null;
+      const bg = idx%2===1 ? PDF_STY.ZEBRA : null;
 
-      const cell1 = dRow.appendTableCell();
-      const p1 = cell1.appendParagraph(cat);
-      p1.setFontSize(10);
-      p1.editAsText().setForegroundColor('#000000');
-      cell1.setPaddingTop(8).setPaddingBottom(8).setPaddingLeft(12).setPaddingRight(12);
-      if (bg) cell1.setBackgroundColor(bg);
+      const c1 = dRow.appendTableCell();
+      _cella(c1, cat, { size: 10 });
+      _stileCella(c1, { bg: bg, pt: 6, pb: 6, pl: 10, pr: 10 });
 
-      const cell2 = dRow.appendTableCell();
-      const p2 = cell2.appendParagraph(val.toFixed(2).replace(".",","));
-      p2.setBold(true).setFontSize(10);
-      p2.editAsText().setForegroundColor('#000000');
-      cell2.setPaddingTop(8).setPaddingBottom(8).setPaddingLeft(12).setPaddingRight(12);
-      if (bg) cell2.setBackgroundColor(bg);
+      const c2 = dRow.appendTableCell();
+      _cella(c2, formatEuro(val), { size: 10, align: AR });
+      _stileCella(c2, { bg: bg, pt: 6, pb: 6, pl: 10, pr: 10 });
     });
 
     const tRowCat = tblCat.appendTableRow();
-    const tCellCat1 = tRowCat.appendTableCell();
-    const pTC1 = tCellCat1.appendParagraph("TOTALE COMPLESSIVO");
-    pTC1.setBold(true).setFontSize(13);
-    pTC1.editAsText().setForegroundColor('#FFFFFF');
-    tCellCat1.setBackgroundColor('#4CAF50');
-    tCellCat1.setPaddingTop(12).setPaddingBottom(12).setPaddingLeft(12).setPaddingRight(12);
+    const tc1 = tRowCat.appendTableCell();
+    _cella(tc1, "TOTALE COMPLESSIVO", { bold: true, size: 10.5, color: PDF_STY.NAVY });
+    _stileCella(tc1, { bg: PDF_STY.TOTALE, pt: 8, pb: 8, pl: 10, pr: 10 });
 
-    const tCellCat2 = tRowCat.appendTableCell();
-    const pTC2 = tCellCat2.appendParagraph(tot.toFixed(2).replace(".",","));
-    pTC2.setBold(true).setFontSize(13);
-    pTC2.editAsText().setForegroundColor('#FFFFFF');
-    tCellCat2.setBackgroundColor('#4CAF50');
-    tCellCat2.setPaddingTop(12).setPaddingBottom(12).setPaddingLeft(12).setPaddingRight(12);
+    const tc2 = tRowCat.appendTableCell();
+    _cella(tc2, formatEuro(tot), { bold: true, size: 10.5, align: AR, color: PDF_STY.NAVY });
+    _stileCella(tc2, { bg: PDF_STY.TOTALE, pt: 8, pb: 8, pl: 10, pr: 10 });
   }
 
-  // ===================== INDICE PDF ALLEGATI =====================
+  // ===================== INDICE DOCUMENTI PDF ALLEGATI =====================
   if (pdfAllegati.length > 0) {
     body.appendPageBreak();
 
-    body.appendParagraph("DOCUMENTI PDF ALLEGATI")
-      .setHeading(DocumentApp.ParagraphHeading.HEADING2)
-      .setFontSize(14)
-      .setSpacingAfter(10)
-      .editAsText().setForegroundColor('#000000');
+    const hAll = body.appendParagraph("DOCUMENTI PDF ALLEGATI");
+    hAll.setFontFamily(PDF_STY.SANS).setFontSize(11).setBold(true).setSpacingAfter(6);
+    hAll.editAsText().setForegroundColor(PDF_STY.NAVY);
 
     const introAllegati = body.appendParagraph(
-      `I seguenti ${pdfAllegati.length} documenti PDF sono disponibili nella cartella:\n` +
+      `${pdfAllegati.length} documenti PDF nella cartella  ` +
       `${CONFIG.ROOT_FOLDER} / ${periodo} / ${CONFIG.SOTTOCARTELLA_PDF}/`
     );
-    introAllegati.setFontSize(10);
-    introAllegati.setItalic(true);
-    introAllegati.setSpacingAfter(20);
-    introAllegati.editAsText().setForegroundColor('#000000');
+    introAllegati.setFontFamily(PDF_STY.SANS).setFontSize(9.5).setSpacingAfter(14);
+    introAllegati.editAsText().setForegroundColor(PDF_STY.GRIGIO);
 
     pdfAllegati.forEach((pdf) => {
       const voce = body.appendParagraph(
-        `${pdf.indice}. ${pdf.data} - ${pdf.negozio}\n` +
-        `   ${pdf.categoria} • € ${pdf.importo.toFixed(2).replace(".",",")} • 📄 ${pdf.nomeFile}`
+        `${pdf.indice}.   ${pdf.data}   —   ${pdf.negozio}   ·   ${pdf.categoria}   ·   ${formatEuro(pdf.importo)}   ·   ${pdf.nomeFile}`
       );
-      voce.setFontSize(10);
-      voce.setSpacingBefore(5);
-      voce.setSpacingAfter(10);
-      voce.editAsText().setForegroundColor('#000000');
+      voce.setFontFamily(PDF_STY.SANS).setFontSize(9.5).setSpacingAfter(5);
+      voce.editAsText().setForegroundColor(PDF_STY.TESTO);
     });
   }
+
+  // Piè di pagina discreto su ogni pagina
+  try {
+    const footer = doc.addFooter();
+    const fp = footer.appendParagraph("Nota spese  ·  " + _periodoEsteso(periodo));
+    fp.setFontFamily(PDF_STY.SANS).setFontSize(8).setAlignment(AC);
+    fp.editAsText().setForegroundColor(PDF_STY.GRIGIO);
+  } catch(e){ Logger.log("⚠️ Footer: " + e.message); }
 
   // Salva e converti in PDF (sovrascrivendo eventuali versioni precedenti)
   doc.saveAndClose();
@@ -1196,9 +1186,9 @@ function chiudiMeseManuale(anno, mese){
   txtContent += `${"=".repeat(50)}\nDETTAGLIO SPESE (ordinato per data)\n${"=".repeat(50)}\n\n`;
   vociMese.forEach((v, idx) => {
     txtContent += `${idx+1}. ${v.data} - ${v.negozio}\n   ${v.categoria} • € ${v.importo.toFixed(2).replace(".",",")}\n`;
-    if (v.ospInt) txtContent += `   👥 Ospiti interni: ${v.ospInt}\n`;
-    if (v.ospEst) txtContent += `   🤝 Ospiti esterni: ${v.ospEst}\n`;
-    if (v.note)   txtContent += `   📝 Note: ${v.note}\n`;
+    if (v.ospInt) txtContent += `   Ospiti interni: ${v.ospInt}\n`;
+    if (v.ospEst) txtContent += `   Ospiti esterni: ${v.ospEst}\n`;
+    if (v.note)   txtContent += `   Note: ${v.note}\n`;
     txtContent += "\n";
   });
   txtContent += `\n${"=".repeat(50)}\nRIEPILOGO PER CATEGORIA\n${"=".repeat(50)}\n\n`;
@@ -1691,7 +1681,7 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.7.0" });
+      return out({ ok: true, versione: "4.8.0" });
     }
 
     if (body.action === "cerca"){

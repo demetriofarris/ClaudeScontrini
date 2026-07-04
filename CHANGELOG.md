@@ -2,6 +2,9 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.8.0 — 04/07/2026
+- **PDF di chiusura mese ridisegnato** in stile più sobrio e professionale: intestazione "Nota spese" con il mese per esteso, tabella riepilogativa rifatta, palette neutra (via i colori accesi), niente emoji, piè di pagina. Le immagini degli scontrini restano grandi e leggibili.
+
 ## v4.7.0 — 03/07/2026
 - Nuova sezione **Statistiche**: totali di spesa per categoria, con barre e percentuali. Periodo selezionabile **Mese** o **Anno** (default: mese corrente).
 - **Link agli allegati**: aprendo una spesa dall'elenco/ricerca compaiono i pulsanti per aprire su Drive lo scontrino, il pagamento e l'eventuale PDF.
