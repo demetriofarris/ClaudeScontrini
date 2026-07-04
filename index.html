@@ -125,6 +125,32 @@
     margin-top:18px; padding-top:14px; border-top:1px solid #EEE; line-height:1.7;
   }
   .versione-info a{ color:var(--verde); font-weight:600; text-decoration:none; }
+  .seg{ display:flex; gap:0; border:1px solid #D5D9D5; border-radius:10px; overflow:hidden; }
+  .seg-btn{
+    flex:1; padding:10px; border:none; background:#fff; color:var(--grigio);
+    font-family:inherit; font-size:.95rem; font-weight:600; cursor:pointer;
+  }
+  .seg-btn.seg-attivo{ background:var(--verde); color:#fff; }
+  .stat-cat{ position:relative; }
+  .stat-cat .stat-barra{
+    position:absolute; left:0; top:0; bottom:0; background:#E8F0E8; border-radius:6px; z-index:0;
+  }
+  .stat-cat .stat-riga{
+    position:relative; z-index:1; display:flex; justify-content:space-between; align-items:baseline;
+    padding:9px 8px; gap:8px;
+  }
+  .stat-cat .stat-nome{ font-weight:600; }
+  .stat-cat .stat-perc{ font-size:.72rem; color:var(--grigio); margin-left:6px; font-weight:400; }
+  .stat-cat .stat-tot{ font-weight:700; white-space:nowrap; }
+  .stat-totale{
+    display:flex; justify-content:space-between; padding:11px 8px; margin-top:6px;
+    border-top:2px solid #DDE5DD; font-weight:700;
+  }
+  .allegati-box{ margin:2px 0 12px; }
+  .allegati-box a{
+    display:inline-block; background:#E8F0E8; color:var(--verde); font-weight:600;
+    text-decoration:none; padding:8px 12px; border-radius:10px; margin:4px 6px 0 0; font-size:.85rem;
+  }
 </style>
 </head>
 <body>
@@ -165,6 +191,7 @@
       <button class="tile" id="btnVaiElenco"><span class="tile-icona">📋</span>Spese del mese</button>
       <button class="tile" id="btnVaiCerca"><span class="tile-icona">🔍</span>Cerca spese</button>
       <button class="tile" id="btnVaiMese"><span class="tile-icona">📊</span>Chiusura mese</button>
+      <button class="tile" id="btnVaiStat"><span class="tile-icona">📈</span>Statistiche</button>
       <button class="tile" id="btnVaiImpostazioni"><span class="tile-icona">⚙️</span>Impostazioni</button>
     </div>
     <input id="inputFoto" class="nascosto" type="file" accept="image/*,application/pdf">
@@ -261,6 +288,7 @@
   <section id="vistaModifica" class="card nascosto">
     <h2>✏️ Modifica spesa</h2>
     <p id="mBadgeAi" class="centro nascosto" style="font-size:.82rem;font-weight:600;color:var(--verde);margin-bottom:8px"></p>
+    <div id="mAllegati" class="allegati-box nascosto"></div>
 
     <div class="riga-doppia">
       <div>
@@ -380,6 +408,29 @@
     </div>
   </section>
 
+  <!-- ======== STATISTICHE ======== -->
+  <section id="vistaStatistiche" class="nascosto">
+    <div class="card">
+      <h2>📈 Statistiche</h2>
+      <div class="seg">
+        <button id="statMese" class="seg-btn seg-attivo">Mese</button>
+        <button id="statAnno" class="seg-btn">Anno</button>
+      </div>
+      <div id="statBoxMese" style="margin-top:10px">
+        <label>Mese</label>
+        <input id="statInputMese" type="month">
+      </div>
+      <div id="statBoxAnno" class="nascosto" style="margin-top:10px">
+        <label>Anno</label>
+        <select id="statInputAnno"></select>
+      </div>
+      <div id="boxStat" style="margin-top:14px"></div>
+      <div style="margin-top:14px">
+        <button class="btn btn-secondario" id="btnIndietroStat" style="margin-top:0">← Home</button>
+      </div>
+    </div>
+  </section>
+
 </main>
 
 <script>
@@ -395,7 +446,7 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.6.0",
+  versione: "4.7.0",
   data: "03/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
@@ -422,7 +473,7 @@ let editor = { canvasFull: null, canvasCrop: null };
 
 // ---------- riferimenti DOM ----------
 const $ = (id) => document.getElementById(id);
-const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaModifica", "vistaElenco", "vistaCerca", "vistaMese", "vistaImpostazioni"];
+const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaModifica", "vistaElenco", "vistaCerca", "vistaMese", "vistaStatistiche", "vistaImpostazioni"];
 function mostra(vista){
   viste.forEach(v => $(v).classList.toggle("nascosto", v !== vista));
 }
@@ -982,6 +1033,37 @@ function apriModifica(spesa, origine){
   $("mBadgeAi").classList.add("nascosto");
   $("mErrore").classList.add("nascosto");
   mostra("vistaModifica");
+  mostraAllegati(spesa);
+}
+
+// link per aprire su Drive gli allegati della spesa (risolti su richiesta)
+async function mostraAllegati(spesa){
+  const box = $("mAllegati");
+  box.innerHTML = "";
+  box.classList.add("nascosto");
+  if (!spesa.haAllegati) return;
+  box.innerHTML = '<span class="centro" style="color:var(--grigio);font-size:.8rem">📎 allegati…</span>';
+  box.classList.remove("nascosto");
+  try {
+    const r = await api({ action: "allegati", riga: spesa.riga });
+    // la spesa aperta potrebbe essere cambiata nel frattempo
+    if (modifica.riga !== spesa.riga) return;
+    if (r.ok && r.allegati && r.allegati.length){
+      box.innerHTML = "";
+      r.allegati.forEach(a => {
+        const link = document.createElement("a");
+        link.href = a.url;
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = a.etichetta;
+        box.appendChild(link);
+      });
+    } else {
+      box.classList.add("nascosto");
+    }
+  } catch (err) {
+    box.classList.add("nascosto");
+  }
 }
 
 // imposta la categoria nel select gestendo eventuali categorie storiche fuori elenco
@@ -1330,6 +1412,93 @@ async function caricaRiepiloghi(){
       div.querySelector("a").href = rp.url;
       box.appendChild(div);
     });
+  } catch (err) {
+    box.innerHTML = '<p class="errore">❌ ' + err.message + '</p>';
+  }
+}
+
+// ---------- statistiche (totali per categoria, periodo selezionabile) ----------
+$("btnVaiStat").onclick = () => {
+  const oggi = new Date();
+  $("statInputMese").value = oggi.getFullYear() + "-" + String(oggi.getMonth() + 1).padStart(2, "0");
+  // popola gli anni (corrente e 4 precedenti)
+  const aSel = $("statInputAnno");
+  aSel.innerHTML = "";
+  for (let y = oggi.getFullYear(); y >= oggi.getFullYear() - 4; y--){
+    const o = document.createElement("option");
+    o.value = o.textContent = y;
+    aSel.appendChild(o);
+  }
+  impostaModoStat(true);   // default: Mese
+  mostra("vistaStatistiche");
+  caricaStatistiche();
+};
+$("btnIndietroStat").onclick = () => mostra("vistaHome");
+
+function impostaModoStat(mese){
+  $("statMese").classList.toggle("seg-attivo", mese);
+  $("statAnno").classList.toggle("seg-attivo", !mese);
+  $("statBoxMese").classList.toggle("nascosto", !mese);
+  $("statBoxAnno").classList.toggle("nascosto", mese);
+}
+$("statMese").onclick = () => { impostaModoStat(true); caricaStatistiche(); };
+$("statAnno").onclick = () => { impostaModoStat(false); caricaStatistiche(); };
+$("statInputMese").onchange = () => caricaStatistiche();
+$("statInputAnno").onchange = () => caricaStatistiche();
+
+function statPeriodoCorrente(){
+  return $("statMese").classList.contains("seg-attivo")
+    ? $("statInputMese").value        // "yyyy-MM"
+    : $("statInputAnno").value;        // "yyyy"
+}
+
+async function caricaStatistiche(){
+  const box = $("boxStat");
+  const periodo = statPeriodoCorrente();
+  if (!periodo){ box.innerHTML = '<p class="centro">Scegli un periodo</p>'; return; }
+  box.innerHTML = '<p class="centro"><span class="spinner-mini"></span> caricamento…</p>';
+  try {
+    const r = await api({ action: "cerca", query: "", periodo: periodo });
+    if (!r.ok) throw new Error(r.errore || "Errore");
+    if (!r.spese.length){
+      box.innerHTML = '<p class="centro">Nessuna spesa nel periodo</p>';
+      return;
+    }
+    // somma per categoria
+    const perCat = {};
+    let totale = 0;
+    r.spese.forEach(s => {
+      const cat = s.categoria || "Altro";
+      const v = parseEuro(s.totale);
+      perCat[cat] = (perCat[cat] || 0) + v;
+      totale += v;
+    });
+    const voci = Object.entries(perCat).sort((a, b) => b[1] - a[1]);
+    const maxVal = voci[0][1] || 1;
+
+    box.innerHTML = "";
+    voci.forEach(([cat, val]) => {
+      const perc = totale ? Math.round(val / totale * 100) : 0;
+      const riga = document.createElement("div");
+      riga.className = "stat-cat";
+      riga.innerHTML =
+        '<div class="stat-barra"></div>' +
+        '<div class="stat-riga"><div class="stat-nome"></div><div class="stat-tot"></div></div>';
+      riga.querySelector(".stat-barra").style.width = Math.round(val / maxVal * 100) + "%";
+      const nome = riga.querySelector(".stat-nome");
+      nome.textContent = cat;
+      const percSpan = document.createElement("span");
+      percSpan.className = "stat-perc";
+      percSpan.textContent = perc + "%";
+      nome.appendChild(percSpan);
+      riga.querySelector(".stat-tot").textContent = formattaEuro(val);
+      box.appendChild(riga);
+    });
+    const tot = document.createElement("div");
+    tot.className = "stat-totale";
+    tot.innerHTML = "<span>TOTALE (" + r.spese.length + " spese)</span><span></span>";
+    tot.lastChild.textContent = formattaEuro(totale);
+    box.appendChild(tot);
   } catch (err) {
     box.innerHTML = '<p class="errore">❌ ' + err.message + '</p>';
   }

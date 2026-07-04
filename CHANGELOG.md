@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.7.0 — 03/07/2026
+- Nuova sezione **Statistiche**: totali di spesa per categoria, con barre e percentuali. Periodo selezionabile **Mese** o **Anno** (default: mese corrente).
+- **Link agli allegati**: aprendo una spesa dall'elenco/ricerca compaiono i pulsanti per aprire su Drive lo scontrino, il pagamento e l'eventuale PDF.
+- Pulizia interna del codice.
+
 ## v4.6.0 — 03/07/2026
 - **Totale del mese sempre completo**: l'elenco non è più limitato a 50 spese (il limite resta solo per la ricerca testuale).
 - **Protezione anti-duplicato**: se salvi una spesa identica a una già presente (stessa data, totale e negozio), l'app chiede conferma prima di procedere.
