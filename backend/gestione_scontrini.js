@@ -1,5 +1,8 @@
 // ============================================================================
-// GESTIONE SCONTRINI - VERSIONE 4.9.0 (PROGETTO STANDALONE PARALLELO)
+// GESTIONE SCONTRINI - VERSIONE 4.9.1 (PROGETTO STANDALONE PARALLELO)
+// + POLISH v4.9.1: PDF — titolo "REPORT RICEVUTE" + nome (Script Property
+//   INTESTATARIO, default "Demetrio Farris"), separatore migliaia negli importi
+//   (formatEuro "€ 1.234,56"), riga di stacco sotto ogni voce, header più basso
 // + FIX v4.9: _cella non lancia più "elemento di testo vuoto" sulle celle vuote
 //   (bloccava la generazione del PDF di chiusura mese in v4.8)
 // + NEW v4.9: colonna "ID" univoco (UUID) per riga → modifica/eliminazione
@@ -418,8 +421,15 @@ function parseImporto(raw){
   return isNaN(n) ? 0 : n;
 }
 
+// "€ 1.234,56": punto migliaia + virgola decimali (formato IT).
+// parseImporto e la PWA (parseEuro) tolgono comunque i punti migliaia, quindi
+// il cambio è retro-compatibile con i valori già nel foglio.
 function formatEuro(n){
-  return "€ " + n.toFixed(2).replace(".", ",");
+  const num = (typeof n === "number" && !isNaN(n)) ? n : 0;
+  const neg = num < 0;
+  const parti = Math.abs(num).toFixed(2).split(".");
+  const intero = parti[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+  return "€ " + (neg ? "-" : "") + intero + "," + parti[1];
 }
 
 // Cerca una cartella per nome usando la cache degli ID in Script Properties
@@ -982,11 +992,14 @@ function chiudiMeseManuale(anno, mese){
   const AC = DocumentApp.HorizontalAlignment.CENTER;
 
   // ---- INTESTAZIONE (letterhead sobrio) ----
-  const titolo = body.appendParagraph("NOTA SPESE");
+  const titolo = body.appendParagraph("REPORT RICEVUTE");
   titolo.setFontFamily(PDF_STY.SERIF).setFontSize(20).setBold(true).setSpacingAfter(1);
   titolo.editAsText().setForegroundColor(PDF_STY.NAVY);
 
-  const sottot = body.appendParagraph(_periodoEsteso(periodo));
+  // Nome e cognome (senza etichetta) + mese. Configurabile via Script Property
+  // INTESTATARIO senza toccare il codice.
+  const nomeInt = _prop("INTESTATARIO") || "Demetrio Farris";
+  const sottot = body.appendParagraph(nomeInt + "     ·     " + _periodoEsteso(periodo));
   sottot.setFontFamily(PDF_STY.SERIF).setFontSize(12).setSpacingAfter(6);
   sottot.editAsText().setForegroundColor(PDF_STY.GRIGIO);
 
@@ -1013,7 +1026,7 @@ function chiudiMeseManuale(anno, mese){
    ["CATEGORIA", null, 115], ["IMPORTO", AR, 95]].forEach(([lab, al, w]) => {
     const c = hr.appendTableCell();
     _cella(c, lab, { bold: true, size: 8.5, color: "#FFFFFF", align: al });
-    _stileCella(c, { bg: PDF_STY.NAVY, width: w, pt: 6, pb: 6 });
+    _stileCella(c, { bg: PDF_STY.NAVY, width: w, pt: 5, pb: 5 });
   });
 
   // righe (zebra leggerissima, importi allineati a destra)
@@ -1089,6 +1102,10 @@ function chiudiMeseManuale(anno, mese){
       pNote.setFontFamily(PDF_STY.SANS).setFontSize(9).setItalic(true).setSpacingAfter(6);
       pNote.editAsText().setForegroundColor(PDF_STY.GRIGIO);
     }
+
+    // riga di stacco sottile sotto l'intestazione della voce
+    const sepVoce = body.appendHorizontalRule();
+    try { sepVoce.getParent().asParagraph().setSpacingBefore(2).setSpacingAfter(6); } catch(e){}
 
     if (v.fileImg || v.fileBancomat) {
       const tbl = body.appendTable();
@@ -1771,7 +1788,7 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.9.0" });
+      return out({ ok: true, versione: "4.9.1" });
     }
 
     if (body.action === "cerca"){

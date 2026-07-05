@@ -2,6 +2,9 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.9.1 — 05/07/2026
+- Ritocchi al PDF: titolo **"Report ricevute"** con nome e cognome, importi con **separatore delle migliaia** (€ 1.234,56), riga di stacco sotto ogni spesa nel dettaglio, intestazione tabella più compatta.
+
 ## v4.9.0 — 04/07/2026
 - **Correzione**: il PDF di chiusura mese ora si genera senza errori (la v4.8 si bloccava con "elemento di testo vuoto").
 - **Robustezza dati**: ogni spesa ha ora un **ID univoco**; modifica ed eliminazione agiscono sull'ID, non più solo sul numero di riga (niente più rischi se l'elenco cambia nel frattempo).
