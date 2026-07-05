@@ -1,5 +1,12 @@
 // ============================================================================
-// GESTIONE SCONTRINI - VERSIONE 4.8.0 (PROGETTO STANDALONE PARALLELO)
+// GESTIONE SCONTRINI - VERSIONE 4.9.0 (PROGETTO STANDALONE PARALLELO)
+// + FIX v4.9: _cella non lancia più "elemento di testo vuoto" sulle celle vuote
+//   (bloccava la generazione del PDF di chiusura mese in v4.8)
+// + NEW v4.9: colonna "ID" univoco (UUID) per riga → modifica/eliminazione
+//   risolte per ID (robuste a riordini/eliminazioni), non più solo per numero
+//   di riga. Migrazione righe esistenti: eseguire assegnaIDMancanti() una volta.
+// + NEW v4.9: LockService sulle scritture (salva/aggiorna/elimina) contro
+//   operazioni concorrenti.
 // + RESTYLE v4.8: PDF di chiusura mese ridisegnato "aziendale" — palette sobria
 //   (un solo accento navy, niente blu/verde acceso), tabella riepilogativa nuova,
 //   titolo "NOTA SPESE" + mese esteso, niente emoji, piè di pagina; immagini
@@ -127,7 +134,7 @@ function getFoglioSpese_() {
 const HEADERS_V4 = [
   "Data", "Totale", "Negozio", "Categoria",
   "Foto", "FotoBancomat", "PDF", "Testo_scontrino",
-  "Ospiti_Interni", "Ospiti_Esterni", "Note", "Alert_Data"
+  "Ospiti_Interni", "Ospiti_Esterni", "Note", "Alert_Data", "ID"
 ];
 
 function setupNuovoAmbiente() {
@@ -340,11 +347,16 @@ function _periodoEsteso(periodo){
 // default alla prima chiamata (così non restano righe vuote sopra il testo).
 function _cella(cell, text, o){
   o = o || {};
-  const primo = cell.getNumChildren() === 1
-             && cell.getChild(0).getType() === DocumentApp.ElementType.PARAGRAPH
-             && cell.getChild(0).asParagraph().getText() === "";
-  const p = primo ? cell.getChild(0).asParagraph() : cell.appendParagraph("");
-  p.setText(text == null ? "" : String(text));
+  const s = (text == null) ? "" : String(text);
+  // riusa il paragrafo vuoto di default della cella (niente riga vuota sopra)
+  const p = (cell.getNumChildren() >= 1 && cell.getChild(0).getType() === DocumentApp.ElementType.PARAGRAPH)
+          ? cell.getChild(0).asParagraph()
+          : cell.appendParagraph(s || " ");
+  // ATTENZIONE: setText("")/appendParagraph("") lanciano "elemento di testo
+  // vuoto". Per le celle vuote si stila solo lo sfondo (via _stileCella) e si
+  // lascia il paragrafo vuoto, senza toccare testo/colore.
+  if (s === "") return p;
+  p.setText(s);
   p.setFontFamily(o.font || PDF_STY.SANS).setFontSize(o.size || 9)
    .setBold(!!o.bold).setItalic(!!o.italic);
   if (o.align) p.setAlignment(o.align);
@@ -461,6 +473,62 @@ function rimuoviFileOmonimi(folder, name){
   while (it.hasNext()){
     try { it.next().setTrashed(true); } catch(e) {}
   }
+}
+
+// Serializza le operazioni di scrittura (salva/aggiorna/elimina) con un lock:
+// evita append/sovrascritture concorrenti se arrivano due richieste ravvicinate.
+function _conLockScrittura(fn){
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(15000)){
+    throw new Error("Un'altra operazione è in corso, riprova tra un istante");
+  }
+  try { return fn(); }
+  finally { lock.releaseLock(); }
+}
+
+// Garantisce la colonna "ID" nel foglio (la crea in coda se manca).
+// Restituisce le intestazioni aggiornate.
+function _assicuraColonnaID_(sh){
+  let headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  if (!_findCol(headers, ["ID"])){
+    const nuovaCol = sh.getLastColumn() + 1;
+    sh.getRange(1, nuovaCol).setValue("ID").setFontWeight("bold");
+    headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  }
+  return headers;
+}
+
+// Numero di riga della spesa con quell'ID univoco (0 se non trovata / no colonna).
+function _trovaRigaPerID_(sh, headers, id){
+  if (!id) return 0;
+  const cID = _findCol(headers, ["ID"]);
+  if (!cID) return 0;
+  const last = sh.getLastRow();
+  if (last < 2) return 0;
+  const vals = sh.getRange(2, cID, last - 1, 1).getValues();
+  const target = String(id).trim();
+  for (let i = 0; i < vals.length; i++){
+    if (String(vals[i][0]).trim() === target) return i + 2;
+  }
+  return 0;
+}
+
+// Migrazione una-tantum (da eseguire a mano): assegna un UUID alle righe
+// esistenti prive di ID. Da lanciare dopo aver caricato il codice v4.9.
+function assegnaIDMancanti(){
+  const sh = getFoglioSpese_();
+  const headers = _assicuraColonnaID_(sh);
+  const cID = _findCol(headers, ["ID"]);
+  const last = sh.getLastRow();
+  if (last < 2){ Logger.log("Nessuna riga da aggiornare"); return; }
+  const rng = sh.getRange(2, cID, last - 1, 1);
+  const vals = rng.getValues();
+  let n = 0;
+  for (let i = 0; i < vals.length; i++){
+    if (String(vals[i][0]).trim() === ""){ vals[i][0] = Utilities.getUuid(); n++; }
+  }
+  rng.setValues(vals);
+  Logger.log("✅ ID assegnati a " + n + " righe (su " + vals.length + ")");
 }
 
 // Cestina il file referenziato da un path "Cartella/nome.ext" cercandolo sia
@@ -1226,7 +1294,8 @@ function cercaSpese(p){
         iOspEst = _findCol(headers, ["Ospiti_Esterni"]) - 1,
         iFoto = _findCol(headers, ["Foto"]) - 1,
         iFotoBc = _findCol(headers, ["FotoBancomat", "Foto Bancomat"]) - 1,
-        iPDF  = _findCol(headers, ["PDF"]) - 1;
+        iPDF  = _findCol(headers, ["PDF"]) - 1,
+        iID   = _findCol(headers, ["ID"]) - 1;
 
   const q = _norm(p.query || "");
   const periodo = String(p.periodo || "").trim();
@@ -1262,6 +1331,7 @@ function cercaSpese(p){
 
     out.push({
       riga: i + 2,
+      id: iID >= 0 ? String(r[iID] || "") : "",
       data: d ? Utilities.formatDate(d, tz, "dd/MM/yyyy") : String(r[iData] || ""),
       totale: formatEuro(parseImporto(iTot >= 0 ? r[iTot] : 0)),
       negozio: iNeg >= 0 ? String(r[iNeg] || "") : "",
@@ -1356,7 +1426,7 @@ function _cercaDuplicato_(sh, headers, p){
 
 function salvaSpesa(p){
   const sh = getFoglioSpese_();
-  const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
+  const headers = _assicuraColonnaID_(sh);  // garantisce la colonna ID
 
   // Meglio un errore chiaro che una riga salvata vuota: se le intestazioni non
   // sono leggibili, tutti i setCol scarterebbero i valori in silenzio
@@ -1422,6 +1492,7 @@ function salvaSpesa(p){
   setCol(["Ospiti_Esterni"], String(p.ospitiEsterni || "").trim());
   setCol(["Note"], String(p.note || "").trim());
   setCol(["Testo_scontrino", "Testo scontrino"], String(p.testo || "").trim());
+  setCol(["ID"], Utilities.getUuid());  // chiave stabile della riga
 
   sh.appendRow(row);
   return sh.getLastRow();
@@ -1457,12 +1528,22 @@ function _verificaRiga_(sh, headers, riga, p){
 
 function aggiornaSpesa(p){
   const sh = getFoglioSpese_();
-  const riga = parseInt(p.riga);
-  if (isNaN(riga) || riga < 2 || riga > sh.getLastRow()){
-    throw new Error("Riga non valida: " + p.riga);
-  }
   const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  _verificaRiga_(sh, headers, riga, p);
+
+  // Se la spesa ha un ID univoco è la chiave primaria: la riga si risolve per
+  // ID (robusto a riordini/eliminazioni). Solo per le righe legacy senza ID si
+  // usa il numero di riga con verifica dell'impronta data+totale.
+  let riga;
+  if (p.id){
+    riga = _trovaRigaPerID_(sh, headers, p.id);
+    if (!riga) throw new Error("Spesa non trovata (potrebbe essere stata eliminata): ricarica e riprova");
+  } else {
+    riga = parseInt(p.riga);
+    if (isNaN(riga) || riga < 2 || riga > sh.getLastRow()){
+      throw new Error("Riga non valida: " + p.riga);
+    }
+    _verificaRiga_(sh, headers, riga, p);
+  }
 
   const setCella = (aliases, val) => {
     const c = _findCol(headers, aliases);
@@ -1550,12 +1631,21 @@ function aggiornaSpesa(p){
 // diventano obsoleti).
 function eliminaSpesa(p){
   const sh = getFoglioSpese_();
-  const riga = parseInt(p.riga);
-  if (isNaN(riga) || riga < 2 || riga > sh.getLastRow()){
-    throw new Error("Riga non valida: " + p.riga);
-  }
   const headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  _verificaRiga_(sh, headers, riga, p);
+
+  // Riga risolta per ID quando presente (chiave stabile); fallback legacy sul
+  // numero di riga con verifica dell'impronta.
+  let riga;
+  if (p.id){
+    riga = _trovaRigaPerID_(sh, headers, p.id);
+    if (!riga) throw new Error("Spesa non trovata (potrebbe essere già stata eliminata): ricarica e riprova");
+  } else {
+    riga = parseInt(p.riga);
+    if (isNaN(riga) || riga < 2 || riga > sh.getLastRow()){
+      throw new Error("Riga non valida: " + p.riga);
+    }
+    _verificaRiga_(sh, headers, riga, p);
+  }
 
   [["Foto"], ["FotoBancomat", "Foto Bancomat"], ["PDF"]].forEach(aliases => {
     const c = _findCol(headers, aliases);
@@ -1666,8 +1756,8 @@ function doGet(e){
 //              da Claude Vision (immagine o PDF)
 //   salva    → { foto?, fotoBancomat?, pdfBancomat?, pdf?, data, totale, negozio,
 //                categoria, ospitiInterni?, ospitiEsterni?, note?, testo? } → nuova riga
-//   aggiorna → { riga, ...campi (foto?/fotoBancomat?/pdfBancomat?) } → aggiorna riga
-//   elimina  → { riga } → cancella la riga e cestina i file collegati
+//   aggiorna → { id? o riga, ...campi (foto?/fotoBancomat?/pdfBancomat?) } → aggiorna
+//   elimina  → { id? o riga } → cancella la riga e cestina i file collegati
 //   cerca    → { query?, periodo? "yyyy-MM" o "yyyy" } → spese (+ haAllegati)
 //   allegati → { riga } → URL Drive di foto/PDF di quella spesa
 function doPost(e){
@@ -1681,7 +1771,7 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.8.0" });
+      return out({ ok: true, versione: "4.9.0" });
     }
 
     if (body.action === "cerca"){
@@ -1719,8 +1809,10 @@ function doPost(e){
       return out({ ok: true, dati: dati });
     }
 
+    // Le scritture sono serializzate con un lock (niente append/aggiornamenti
+    // concorrenti se arrivano due richieste ravvicinate).
     if (body.action === "salva"){
-      const esito = salvaSpesa(body);
+      const esito = _conLockScrittura(() => salvaSpesa(body));
       if (esito && esito.duplicato){
         return out({ ok: false, duplicato: true,
                      errore: "Spesa identica già presente (riga " + esito.riga + ")" });
@@ -1729,12 +1821,12 @@ function doPost(e){
     }
 
     if (body.action === "aggiorna"){
-      const riga = aggiornaSpesa(body);
+      const riga = _conLockScrittura(() => aggiornaSpesa(body));
       return out({ ok: true, riga: riga });
     }
 
     if (body.action === "elimina"){
-      eliminaSpesa(body);
+      _conLockScrittura(() => eliminaSpesa(body));
       return out({ ok: true });
     }
 

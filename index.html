@@ -446,7 +446,7 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.8.0",
+  versione: "4.9.0",
   data: "04/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
@@ -1006,8 +1006,9 @@ let modifica = { riga: null, fotoB64: null, fotoIsPdf: false, bancomatB64: null,
 
 function apriModifica(spesa, origine){
   modifica = { riga: spesa.riga, fotoB64: null, fotoIsPdf: false, bancomatB64: null, bancomatIsPdf: false, testoAi: null, origine,
-               // impronta della spesa ORIGINALE: il backend verifica che la riga
-               // corrisponda ancora prima di modificarla/eliminarla
+               // ID univoco = chiave primaria (se presente il backend risolve
+               // la riga per ID); impronta data+totale come fallback legacy
+               id: spesa.id || "",
                rifData: spesa.data || "", rifTotale: spesa.totale || "" };
   $("mData").value = spesa.data || "";
   controllaDataAnomala($("mData").value, "mDataHint");
@@ -1153,6 +1154,7 @@ $("btnSalvaMod").onclick = async () => {
   try {
     const corpo = {
       action: "aggiorna",
+      id: modifica.id,
       riga: modifica.riga,
       rifData: modifica.rifData,
       rifTotale: modifica.rifTotale,
@@ -1197,7 +1199,7 @@ $("btnEliminaMod").onclick = async () => {
   btn.disabled = true;
   $("mErrore").classList.add("nascosto");
   try {
-    const r = await api({ action: "elimina", riga: modifica.riga, rifData: modifica.rifData, rifTotale: modifica.rifTotale });
+    const r = await api({ action: "elimina", id: modifica.id, riga: modifica.riga, rifData: modifica.rifData, rifTotale: modifica.rifTotale });
     if (!r.ok) throw new Error(r.errore || "Eliminazione fallita");
     mostra(modifica.origine);
     // i numeri di riga in cache cambiano dopo la cancellazione: ricarico l'elenco

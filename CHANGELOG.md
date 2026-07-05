@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.9.0 — 04/07/2026
+- **Correzione**: il PDF di chiusura mese ora si genera senza errori (la v4.8 si bloccava con "elemento di testo vuoto").
+- **Robustezza dati**: ogni spesa ha ora un **ID univoco**; modifica ed eliminazione agiscono sull'ID, non più solo sul numero di riga (niente più rischi se l'elenco cambia nel frattempo).
+- Protezione contro salvataggi concorrenti (lock lato server).
+
 ## v4.8.0 — 04/07/2026
 - **PDF di chiusura mese ridisegnato** in stile più sobrio e professionale: intestazione "Nota spese" con il mese per esteso, tabella riepilogativa rifatta, palette neutra (via i colori accesi), niente emoji, piè di pagina. Le immagini degli scontrini restano grandi e leggibili.
 
