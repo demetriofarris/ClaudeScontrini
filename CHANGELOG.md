@@ -2,6 +2,11 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.10.0 — 23/07/2026
+- Nuova card **Utilizzo API** in Impostazioni: mostra il **residuo stimato** e il **consumo del mese** con barra di avanzamento. È una **stima** basata sui token consumati (non un saldo reale del conto Anthropic); il budget di riferimento è impostabile lato backend (Script Property `BUDGET_API_MENSILE`, default 10).
+- **PDF di chiusura mese**: ora **2 scontrini per pagina** A4 (prima uno per pagina), documento più compatto senza perdere leggibilità.
+- Ritocco cromatico: accento **blu navy** per le sezioni "documentali" (card Utilizzo API, PDF); il verde resta il colore delle azioni principali.
+
 ## v4.9.1 — 05/07/2026
 - Ritocchi al PDF: titolo **"Report ricevute"** con nome e cognome, importi con **separatore delle migliaia** (€ 1.234,56), riga di stacco sotto ogni spesa nel dettaglio, intestazione tabella più compatta.
 

@@ -12,6 +12,9 @@
   :root{
     --verde:#1B5E20; --verde-chiaro:#2E7D32; --sfondo:#F4F6F4;
     --carta:#FFFFFF; --testo:#1A1A1A; --grigio:#757575; --rosso:#C62828;
+    /* Navy = colore "documentale" (riepiloghi, card Utilizzo API, PDF).
+       Il verde resta il colore delle azioni primarie. */
+    --navy:#1F3A5F; --navy-chiaro:#E6EBF2;
   }
   *{ box-sizing:border-box; margin:0; padding:0; }
   body{
@@ -151,6 +154,17 @@
     display:inline-block; background:#E8F0E8; color:var(--verde); font-weight:600;
     text-decoration:none; padding:8px 12px; border-radius:10px; margin:4px 6px 0 0; font-size:.85rem;
   }
+  /* Card "Utilizzo API" (stima) — accento navy documentale */
+  .box-uso{
+    margin-top:22px; padding:14px 16px; border:1px solid var(--navy-chiaro);
+    border-radius:14px; background:var(--navy-chiaro);
+  }
+  .uso-titolo{ font-weight:700; color:var(--navy); font-size:.95rem; margin-bottom:10px; }
+  .uso-riga{ display:flex; justify-content:space-between; align-items:baseline; margin:6px 0; font-size:.9rem; }
+  .uso-val{ font-weight:700; color:var(--navy); }
+  .uso-barra{ height:8px; border-radius:99px; background:#fff; overflow:hidden; margin:8px 0 4px; }
+  .uso-barra > div{ height:100%; width:0; background:var(--navy); transition:width .4s ease; }
+  .uso-nota{ font-size:.78rem; color:var(--grigio); margin-top:8px; line-height:1.35; }
 </style>
 </head>
 <body>
@@ -177,6 +191,15 @@
       <button class="btn btn-primario" id="btnSalvaCfg">Salva e verifica</button>
     </div>
     <p id="cfgEsito" class="centro" style="margin-top:10px"></p>
+
+    <div class="box-uso" id="boxUso" hidden>
+      <div class="uso-titolo">Utilizzo API (stima)</div>
+      <div class="uso-riga"><span>Residuo stimato</span><span class="uso-val" id="usoResiduo">—</span></div>
+      <div class="uso-barra"><div id="usoBarra"></div></div>
+      <div class="uso-riga"><span>Consumo del mese</span><span class="uso-val" id="usoConsumo">—</span></div>
+      <p class="uso-nota" id="usoNota"></p>
+    </div>
+
     <p class="versione-info">
       App v<span id="appVersione"></span> · <span id="appData"></span><br>
       <a id="linkChangelog" target="_blank" rel="noopener">📋 Novità e changelog</a>
@@ -446,8 +469,8 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.9.1",
-  data: "05/07/2026",
+  versione: "4.10.0",
+  data: "23/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
 
@@ -1513,6 +1536,30 @@ function apriImpostazioni(){
   $("cfgToken").value = cfg.token;
   $("cfgEsito").textContent = "";
   mostra("vistaImpostazioni");
+  aggiornaUsoApi();
+}
+
+// Popola la card "Utilizzo API" (stima dai token, non un saldo reale).
+// Silenziosa: se il backend è vecchio o l'URL non è configurato, la card
+// resta semplicemente nascosta.
+async function aggiornaUsoApi(){
+  const box = $("boxUso");
+  box.hidden = true;
+  if (!cfg.url) return;
+  try {
+    const r = await api({ action: "usage" });
+    if (!r || !r.ok || !r.usage) return;
+    const u = r.usage;
+    const eur = n => "$ " + Number(n || 0).toFixed(2);
+    $("usoResiduo").textContent = eur(u.residuo) + " / " + eur(u.budget);
+    $("usoConsumo").textContent = eur(u.consumoMese);
+    const perc = u.budget > 0 ? Math.min(100, Math.round(u.consumoMese / u.budget * 100)) : 0;
+    $("usoBarra").style.width = perc + "%";
+    $("usoBarra").style.background = perc >= 90 ? "var(--rosso)" : "var(--navy)";
+    $("usoNota").textContent = "Stima dai token consumati nel mese (" + u.periodo +
+      "), non un saldo reale del conto Anthropic. Budget di riferimento impostabile lato backend.";
+    box.hidden = false;
+  } catch(e){ /* silenzioso: card nascosta */ }
 }
 $("btnImpostazioni").onclick = apriImpostazioni;
 $("btnVaiImpostazioni").onclick = apriImpostazioni;

@@ -94,7 +94,15 @@ const CONFIG = {
   CLAUDE_MAX_TOKENS: 4096,
   THUMB_WIDTH_AI: 1200,    // risoluzione immagine inviata a Claude
   THUMB_WIDTH_PDF: 400,    // risoluzione thumbnail inserite nel PDF riepilogo
-  MAX_RUNTIME_MS: 4.5 * 60 * 1000  // guardia sul limite 6 min di Apps Script
+  MAX_RUNTIME_MS: 4.5 * 60 * 1000, // guardia sul limite 6 min di Apps Script
+  // Stima costo API (USD per 1M token) — listino claude-haiku-4-5.
+  // Serve solo per la card "Utilizzo API": è una STIMA dai token, non un
+  // saldo reale del conto Anthropic (non esposto via API key).
+  PREZZO_INPUT_1M: 1.0,
+  PREZZO_OUTPUT_1M: 5.0,
+  // Budget mensile di riferimento (USD). Sovrascrivibile senza toccare il
+  // codice: Script Property BUDGET_API_MENSILE.
+  BUDGET_API_MENSILE_DEFAULT: 10
 };
 
 function _prop(name) {
@@ -649,6 +657,7 @@ function estraiDatiConClaude(imageBlob){
     }
 
     const obj = JSON.parse(resp.getContentText());
+    registraCostoChiamata_(obj.usage);   // accumula la stima di costo del mese
     const testo = (obj.content || []).filter(b => b.type === "text").map(b => b.text).join("");
     if (!testo){
       Logger.log("❌ Risposta Claude senza contenuto testuale (stop_reason: " + obj.stop_reason + ")");
@@ -660,6 +669,41 @@ function estraiDatiConClaude(imageBlob){
     Logger.log("❌ Errore chiamata Claude: " + e.message);
     return null;
   }
+}
+
+// ── Stima costo API (card "Utilizzo API") ────────────────────────────────
+// NB: è una STIMA basata sui token consumati, NON un saldo reale del conto
+// Anthropic (che non è esposto via API key). Serve solo come promemoria budget.
+
+// Accumula la stima di costo di una singola chiamata sul contatore del mese
+// (Script Property COSTO_<yyyy-MM>). Silenzioso: non deve mai far fallire
+// l'estrazione se qualcosa va storto.
+function registraCostoChiamata_(usage){
+  try {
+    if (!usage) return;
+    const inTok  = Number(usage.input_tokens  || 0);
+    const outTok = Number(usage.output_tokens || 0);
+    const costo = inTok / 1e6 * CONFIG.PREZZO_INPUT_1M + outTok / 1e6 * CONFIG.PREZZO_OUTPUT_1M;
+    if (!(costo > 0)) return;
+    const props = PropertiesService.getScriptProperties();
+    const key = "COSTO_" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM");
+    const attuale = parseFloat(props.getProperty(key) || "0") || 0;
+    props.setProperty(key, (attuale + costo).toFixed(6));
+  } catch(e){ Logger.log("⚠️ registraCostoChiamata_: " + e.message); }
+}
+
+// Ritorna la situazione del mese corrente per la card Utilizzo API.
+function leggiUsageMese_(){
+  const props = PropertiesService.getScriptProperties();
+  const periodo = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM");
+  const consumoMese = parseFloat(props.getProperty("COSTO_" + periodo) || "0") || 0;
+  const budget = parseFloat(props.getProperty("BUDGET_API_MENSILE") || "") || CONFIG.BUDGET_API_MENSILE_DEFAULT;
+  return {
+    periodo: periodo,
+    budget: budget,
+    consumoMese: consumoMese,
+    residuo: Math.max(0, budget - consumoMese)
+  };
 }
 
 // Normalizza/valida i campi prima di scriverli nel foglio
@@ -1067,10 +1111,12 @@ function chiudiMeseManuale(anno, mese){
   const larghezzaUtile = body.getPageWidth() - body.getMarginLeft() - body.getMarginRight();
   const CELL_W = Math.floor(larghezzaUtile / 2);   // due celle affiancate (ricevuta | pagamento)
   const MAX_IMG_W = CELL_W - 16;                   // padding cella (6+6) + bordi
-  const MAX_IMG_H = Math.floor(body.getPageHeight() - body.getMarginTop() - body.getMarginBottom() - 80); // 80pt per intestazione voce + etichetta
+  // Due scontrini per pagina A4: ogni voce occupa metà altezza utile,
+  // meno ~70pt per intestazione voce + etichetta ricevuta/pagamento.
+  const MAX_IMG_H = Math.floor((body.getPageHeight() - body.getMarginTop() - body.getMarginBottom()) / 2 - 70);
 
   vociMese.forEach((v, idx) => {
-    if (idx > 0) body.appendPageBreak();
+    if (idx > 0 && idx % 2 === 0) body.appendPageBreak();
 
     // Intestazione voce
     const intestazione = body.appendParagraph(`${idx+1}.   ${v.data}   —   ${v.negozio}`);
@@ -1788,7 +1834,11 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.9.1" });
+      return out({ ok: true, versione: "4.10.0" });
+    }
+
+    if (body.action === "usage"){
+      return out({ ok: true, usage: leggiUsageMese_() });
     }
 
     if (body.action === "cerca"){
