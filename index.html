@@ -164,7 +164,17 @@
   .uso-val{ font-weight:700; color:var(--navy); }
   .uso-barra{ height:8px; border-radius:99px; background:#fff; overflow:hidden; margin:8px 0 4px; }
   .uso-barra > div{ height:100%; width:0; background:var(--navy); transition:width .4s ease; }
-  .uso-nota{ font-size:.78rem; color:var(--grigio); margin-top:8px; line-height:1.35; }
+  .uso-ricarica{ display:flex; gap:8px; margin-top:12px; }
+  .uso-ricarica input{
+    flex:1; min-width:0; padding:9px 11px; border:1px solid var(--navy-chiaro);
+    border-radius:10px; background:#fff; color:var(--testo); font-size:.9rem;
+  }
+  .btn-ric{
+    border:none; border-radius:10px; padding:9px 14px; font-weight:700; font-size:.85rem;
+    cursor:pointer; background:var(--navy); color:#fff; white-space:nowrap;
+  }
+  .btn-ric5{ background:#fff; color:var(--navy); border:1px solid var(--navy); }
+  .uso-nota{ font-size:.78rem; color:var(--grigio); margin-top:10px; line-height:1.35; }
 </style>
 </head>
 <body>
@@ -193,10 +203,15 @@
     <p id="cfgEsito" class="centro" style="margin-top:10px"></p>
 
     <div class="box-uso" id="boxUso" hidden>
-      <div class="uso-titolo">Utilizzo API (stima)</div>
-      <div class="uso-riga"><span>Residuo stimato</span><span class="uso-val" id="usoResiduo">—</span></div>
+      <div class="uso-titolo">Credito API (stima)</div>
+      <div class="uso-riga"><span>Credito residuo</span><span class="uso-val" id="usoResiduo">—</span></div>
       <div class="uso-barra"><div id="usoBarra"></div></div>
       <div class="uso-riga"><span>Consumo del mese</span><span class="uso-val" id="usoConsumo">—</span></div>
+      <div class="uso-ricarica">
+        <input id="usoImporto" type="text" inputmode="decimal" autocomplete="off" placeholder="importo $">
+        <button class="btn-ric" id="btnRicarica">Ricarica</button>
+        <button class="btn-ric btn-ric5" id="btnRicarica5">+ $5</button>
+      </div>
       <p class="uso-nota" id="usoNota"></p>
     </div>
 
@@ -469,7 +484,7 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.10.0",
+  versione: "4.11.0",
   data: "23/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
@@ -1539,9 +1554,24 @@ function apriImpostazioni(){
   aggiornaUsoApi();
 }
 
-// Popola la card "Utilizzo API" (stima dai token, non un saldo reale).
-// Silenziosa: se il backend è vecchio o l'URL non è configurato, la card
-// resta semplicemente nascosta.
+// Card "Credito API" (stima dai token, non l'importo fatturato).
+// Il credito è persistente lato backend e si ricarica da qui.
+function renderUso(u){
+  const d = n => "$ " + Number(n || 0).toFixed(2);
+  const res = Number(u.creditoResiduo || 0);
+  const rif = Number(u.creditoRiferimento || 0);
+  $("usoResiduo").textContent = d(res);
+  $("usoConsumo").textContent = d(u.consumoMese);
+  const perc = rif > 0 ? Math.max(0, Math.min(100, Math.round(res / rif * 100))) : 0;
+  $("usoBarra").style.width = perc + "%";
+  const basso = res <= 0.5 || (rif > 0 && res / rif < 0.15);   // avviso "credito quasi finito"
+  $("usoBarra").style.background = basso ? "var(--rosso)" : "var(--navy)";
+  $("usoResiduo").style.color = basso ? "var(--rosso)" : "var(--navy)";
+  $("usoNota").textContent = "Stima dai token (mese " + u.periodo +
+    "), non l'importo fatturato. Il credito è persistente: ricaricalo quando aggiungi fondi su Anthropic.";
+}
+
+// Silenziosa: se il backend è vecchio o l'URL manca, la card resta nascosta.
 async function aggiornaUsoApi(){
   const box = $("boxUso");
   box.hidden = true;
@@ -1549,18 +1579,25 @@ async function aggiornaUsoApi(){
   try {
     const r = await api({ action: "usage" });
     if (!r || !r.ok || !r.usage) return;
-    const u = r.usage;
-    const eur = n => "$ " + Number(n || 0).toFixed(2);
-    $("usoResiduo").textContent = eur(u.residuo) + " / " + eur(u.budget);
-    $("usoConsumo").textContent = eur(u.consumoMese);
-    const perc = u.budget > 0 ? Math.min(100, Math.round(u.consumoMese / u.budget * 100)) : 0;
-    $("usoBarra").style.width = perc + "%";
-    $("usoBarra").style.background = perc >= 90 ? "var(--rosso)" : "var(--navy)";
-    $("usoNota").textContent = "Stima dai token consumati nel mese (" + u.periodo +
-      "), non un saldo reale del conto Anthropic. Budget di riferimento impostabile lato backend.";
+    renderUso(r.usage);
     box.hidden = false;
   } catch(e){ /* silenzioso: card nascosta */ }
 }
+
+async function ricaricaCredito(importo){
+  importo = parseFloat(String(importo).replace(",", "."));
+  if (!cfg.url || !(importo > 0)) return;
+  try {
+    const r = await api({ action: "ricarica", importo: importo });
+    if (r && r.ok && r.usage){
+      renderUso(r.usage);
+      $("boxUso").hidden = false;
+      $("usoImporto").value = "";
+    }
+  } catch(e){ alert("Ricarica non riuscita: " + e.message); }
+}
+$("btnRicarica").onclick  = () => ricaricaCredito($("usoImporto").value);
+$("btnRicarica5").onclick = () => ricaricaCredito(5);
 $("btnImpostazioni").onclick = apriImpostazioni;
 $("btnVaiImpostazioni").onclick = apriImpostazioni;
 

@@ -2,6 +2,10 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.11.0 — 23/07/2026
+- **Credito API a saldo**: la card in Impostazioni ora mostra un **credito residuo persistente** (non si azzera più a fine mese) che scende a ogni scansione. Nuovi pulsanti **Ricarica** (importo a scelta) e **+ $5** per aggiungere credito quando ricarichi su Anthropic. La barra diventa **rossa** quando il credito è quasi finito. Resta lo **storico del consumo mensile**. Tutti i valori sono comunque una **stima** dai token, non l'importo fatturato.
+- **PDF di chiusura mese**: ripristinato **1 scontrino per pagina** (ricevuta e POS grandi, orizzontale) — la versione a 2 per pagina rendeva le immagini poco leggibili.
+
 ## v4.10.0 — 23/07/2026
 - Nuova card **Utilizzo API** in Impostazioni: mostra il **residuo stimato** e il **consumo del mese** con barra di avanzamento. È una **stima** basata sui token consumati (non un saldo reale del conto Anthropic); il budget di riferimento è impostabile lato backend (Script Property `BUDGET_API_MENSILE`, default 10).
 - **PDF di chiusura mese**: ora **2 scontrini per pagina** A4 (prima uno per pagina), documento più compatto senza perdere leggibilità.

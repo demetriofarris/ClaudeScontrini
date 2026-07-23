@@ -96,13 +96,11 @@ const CONFIG = {
   THUMB_WIDTH_PDF: 400,    // risoluzione thumbnail inserite nel PDF riepilogo
   MAX_RUNTIME_MS: 4.5 * 60 * 1000, // guardia sul limite 6 min di Apps Script
   // Stima costo API (USD per 1M token) — listino claude-haiku-4-5.
-  // Serve solo per la card "Utilizzo API": è una STIMA dai token, non un
-  // saldo reale del conto Anthropic (non esposto via API key).
+  // Serve per la card "Credito API": è una STIMA dai token, non l'importo
+  // fatturato da Anthropic (non esposto via API key). Il credito residuo è
+  // persistente (Script Property CREDITO_RESIDUO), ricaricabile dalla UI.
   PREZZO_INPUT_1M: 1.0,
-  PREZZO_OUTPUT_1M: 5.0,
-  // Budget mensile di riferimento (USD). Sovrascrivibile senza toccare il
-  // codice: Script Property BUDGET_API_MENSILE.
-  BUDGET_API_MENSILE_DEFAULT: 10
+  PREZZO_OUTPUT_1M: 5.0
 };
 
 function _prop(name) {
@@ -671,13 +669,26 @@ function estraiDatiConClaude(imageBlob){
   }
 }
 
-// ── Stima costo API (card "Utilizzo API") ────────────────────────────────
-// NB: è una STIMA basata sui token consumati, NON un saldo reale del conto
-// Anthropic (che non è esposto via API key). Serve solo come promemoria budget.
+// ── Stima costo API / credito (card "Credito API") ───────────────────────
+// NB: è tutta una STIMA basata sui token (token × prezzo di listino), NON
+// l'importo fatturato da Anthropic (non esposto via API key). Il "credito
+// residuo" è persistente: scende a ogni scansione e si ricarica dalla UI.
+// Lo storico per mese resta in COSTO_<yyyy-MM>.
 
-// Accumula la stima di costo di una singola chiamata sul contatore del mese
-// (Script Property COSTO_<yyyy-MM>). Silenzioso: non deve mai far fallire
-// l'estrazione se qualcosa va storto.
+// Migrazione una tantum dal vecchio "budget mensile" al credito persistente:
+// se CREDITO_RESIDUO non esiste ancora, parte dal valore di BUDGET_API_MENSILE
+// (che l'utente aveva impostato come credito reale letto dalla Console).
+function _assicuraCredito_(props){
+  if (props.getProperty("CREDITO_RESIDUO") === null){
+    const b = parseFloat(props.getProperty("BUDGET_API_MENSILE") || "0") || 0;
+    props.setProperty("CREDITO_RESIDUO", b.toFixed(6));
+    props.setProperty("CREDITO_RIFERIMENTO", (b > 0 ? b : 0).toFixed(6));
+  }
+}
+
+// Accumula la stima di costo di una scansione: la somma sul contatore del mese
+// (storico) E la scala dal credito residuo persistente. Silenzioso: non deve
+// mai far fallire l'estrazione.
 function registraCostoChiamata_(usage){
   try {
     if (!usage) return;
@@ -686,24 +697,41 @@ function registraCostoChiamata_(usage){
     const costo = inTok / 1e6 * CONFIG.PREZZO_INPUT_1M + outTok / 1e6 * CONFIG.PREZZO_OUTPUT_1M;
     if (!(costo > 0)) return;
     const props = PropertiesService.getScriptProperties();
+    _assicuraCredito_(props);
+    // storico consumo mensile (stima)
     const key = "COSTO_" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM");
     const attuale = parseFloat(props.getProperty(key) || "0") || 0;
     props.setProperty(key, (attuale + costo).toFixed(6));
+    // credito residuo persistente
+    const residuo = parseFloat(props.getProperty("CREDITO_RESIDUO") || "0") || 0;
+    props.setProperty("CREDITO_RESIDUO", (residuo - costo).toFixed(6));
   } catch(e){ Logger.log("⚠️ registraCostoChiamata_: " + e.message); }
 }
 
-// Ritorna la situazione del mese corrente per la card Utilizzo API.
-function leggiUsageMese_(){
+// Stato per la card: credito residuo persistente, riferimento (barra) e
+// consumo stimato del mese corrente.
+function leggiUsoApi_(){
   const props = PropertiesService.getScriptProperties();
+  _assicuraCredito_(props);
   const periodo = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM");
   const consumoMese = parseFloat(props.getProperty("COSTO_" + periodo) || "0") || 0;
-  const budget = parseFloat(props.getProperty("BUDGET_API_MENSILE") || "") || CONFIG.BUDGET_API_MENSILE_DEFAULT;
-  return {
-    periodo: periodo,
-    budget: budget,
-    consumoMese: consumoMese,
-    residuo: Math.max(0, budget - consumoMese)
-  };
+  const creditoResiduo = parseFloat(props.getProperty("CREDITO_RESIDUO") || "0") || 0;
+  let creditoRiferimento = parseFloat(props.getProperty("CREDITO_RIFERIMENTO") || "0") || 0;
+  if (creditoRiferimento < creditoResiduo) creditoRiferimento = creditoResiduo; // coerenza barra
+  return { periodo: periodo, consumoMese: consumoMese, creditoResiduo: creditoResiduo, creditoRiferimento: creditoRiferimento };
+}
+
+// Ricarica il credito: AGGIUNGE l'importo al residuo e riporta la barra a pieno.
+function ricaricaCredito_(importo){
+  importo = parseFloat(importo) || 0;
+  const props = PropertiesService.getScriptProperties();
+  _assicuraCredito_(props);
+  if (importo > 0){
+    const residuo = (parseFloat(props.getProperty("CREDITO_RESIDUO") || "0") || 0) + importo;
+    props.setProperty("CREDITO_RESIDUO", residuo.toFixed(6));
+    props.setProperty("CREDITO_RIFERIMENTO", residuo.toFixed(6)); // barra piena dopo la ricarica
+  }
+  return leggiUsoApi_();
 }
 
 // Normalizza/valida i campi prima di scriverli nel foglio
@@ -1111,12 +1139,10 @@ function chiudiMeseManuale(anno, mese){
   const larghezzaUtile = body.getPageWidth() - body.getMarginLeft() - body.getMarginRight();
   const CELL_W = Math.floor(larghezzaUtile / 2);   // due celle affiancate (ricevuta | pagamento)
   const MAX_IMG_W = CELL_W - 16;                   // padding cella (6+6) + bordi
-  // Due scontrini per pagina A4: ogni voce occupa metà altezza utile,
-  // meno ~70pt per intestazione voce + etichetta ricevuta/pagamento.
-  const MAX_IMG_H = Math.floor((body.getPageHeight() - body.getMarginTop() - body.getMarginBottom()) / 2 - 70);
+  const MAX_IMG_H = Math.floor(body.getPageHeight() - body.getMarginTop() - body.getMarginBottom() - 80); // 80pt per intestazione voce + etichetta
 
   vociMese.forEach((v, idx) => {
-    if (idx > 0 && idx % 2 === 0) body.appendPageBreak();
+    if (idx > 0) body.appendPageBreak();   // uno scontrino per pagina (ricevuta | POS grandi)
 
     // Intestazione voce
     const intestazione = body.appendParagraph(`${idx+1}.   ${v.data}   —   ${v.negozio}`);
@@ -1834,11 +1860,15 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.10.0" });
+      return out({ ok: true, versione: "4.11.0" });
     }
 
     if (body.action === "usage"){
-      return out({ ok: true, usage: leggiUsageMese_() });
+      return out({ ok: true, usage: leggiUsoApi_() });
+    }
+
+    if (body.action === "ricarica"){
+      return out({ ok: true, usage: ricaricaCredito_(body.importo) });
     }
 
     if (body.action === "cerca"){
