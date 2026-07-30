@@ -1075,34 +1075,10 @@ function chiudiMeseManuale(anno, mese){
   // Le cartelle vengono create solo se ci sono spese nel periodo
   const root = getOrCreateFolder(CONFIG.ROOT_FOLDER);
   const periodoFolder = getOrCreateSubfolder(root, periodo);
-  const pdfFolder = getOrCreateSubfolder(periodoFolder, CONFIG.SOTTOCARTELLA_PDF);
 
-  // Indici assegnati DOPO l'ordinamento per data, così la numerazione degli
-  // allegati coincide con quella della tabella e del dettaglio
-  const pdfAllegati = [];
-  vociMese.forEach((v, idx) => {
-    if (!v.pdfFile) return;
-    pdfAllegati.push({
-      file: v.pdfFile,
-      nomeFile: v.pdfFile.getName(),
-      data: v.data,
-      negozio: v.negozio,
-      categoria: v.categoria,
-      importo: v.importo,
-      indice: idx + 1
-    });
-  });
-
-  pdfAllegati.forEach((pdf) => {
-    const nuovoNome = `${String(pdf.indice).padStart(2,'0')}_${pdf.negozio.replace(/[^a-zA-Z0-9]/g,'_').substring(0,30)}.pdf`;
-    try {
-      rimuoviFileOmonimi(pdfFolder, nuovoNome);
-      pdf.file.makeCopy(nuovoNome, pdfFolder);
-      pdf.nomeFile = nuovoNome;
-    } catch(e) {
-      pdf.nomeFile = pdf.file.getName();
-    }
-  });
+  // I PDF degli scontrini restano nella loro cartella originale e compaiono già
+  // come anteprima nel dettaglio: niente più copie rinominate né elenco in coda.
+  const numPdf = vociMese.filter(v => v.pdfFile).length;
 
   // ===================== CREA PDF RIEPILOGO =====================
   const doc = DocumentApp.create("Riepilogo_"+periodo);
@@ -1347,30 +1323,6 @@ function chiudiMeseManuale(anno, mese){
     _stileCella(tc2, { bg: PDF_STY.TOTALE, pt: 8, pb: 8, pl: 10, pr: 10 });
   }
 
-  // ===================== INDICE DOCUMENTI PDF ALLEGATI =====================
-  if (pdfAllegati.length > 0) {
-    body.appendPageBreak();
-
-    const hAll = body.appendParagraph("DOCUMENTI PDF ALLEGATI");
-    hAll.setFontFamily(PDF_STY.SANS).setFontSize(11).setBold(true).setSpacingAfter(6);
-    hAll.editAsText().setForegroundColor(PDF_STY.NAVY);
-
-    const introAllegati = body.appendParagraph(
-      `${pdfAllegati.length} documenti PDF nella cartella  ` +
-      `${CONFIG.ROOT_FOLDER} / ${periodo} / ${CONFIG.SOTTOCARTELLA_PDF}/`
-    );
-    introAllegati.setFontFamily(PDF_STY.SANS).setFontSize(9.5).setSpacingAfter(14);
-    introAllegati.editAsText().setForegroundColor(PDF_STY.GRIGIO);
-
-    pdfAllegati.forEach((pdf) => {
-      const voce = body.appendParagraph(
-        `${pdf.indice}.   ${pdf.data}   —   ${pdf.negozio}   ·   ${pdf.categoria}   ·   ${formatEuro(pdf.importo)}   ·   ${pdf.nomeFile}`
-      );
-      voce.setFontFamily(PDF_STY.SANS).setFontSize(9.5).setSpacingAfter(5);
-      voce.editAsText().setForegroundColor(PDF_STY.TESTO);
-    });
-  }
-
   // Piè di pagina discreto su ogni pagina
   try {
     const footer = doc.addFooter();
@@ -1389,7 +1341,7 @@ function chiudiMeseManuale(anno, mese){
   // File TXT riepilogo
   let txtContent = `RIEPILOGO SPESE ${periodo}\n${"=".repeat(50)}\n\n`;
   txtContent += `Periodo: ${periodo}\nNumero spese: ${righe}\n`;
-  txtContent += `Totale: ${formatEuro(tot)}\nPDF allegati: ${pdfAllegati.length}\n\n`;
+  txtContent += `Totale: ${formatEuro(tot)}\nPDF allegati: ${numPdf}\n\n`;
   txtContent += `${"=".repeat(50)}\nDETTAGLIO SPESE (ordinato per data)\n${"=".repeat(50)}\n\n`;
   vociMese.forEach((v, idx) => {
     txtContent += `${idx+1}. ${v.data} - ${v.negozio}\n   ${v.categoria} • € ${v.importo.toFixed(2).replace(".",",")}\n`;
@@ -1407,7 +1359,7 @@ function chiudiMeseManuale(anno, mese){
   periodoFolder.createFile(`Report_${periodo}.txt`, txtContent);
 
   return {
-    messaggio: `✅ Chiusura ${periodo}: ${righe} spese, ${formatEuro(tot)}, ${pdfAllegati.length} PDF allegati`,
+    messaggio: `✅ Chiusura ${periodo}: ${righe} spese, ${formatEuro(tot)}, ${numPdf} PDF allegati`,
     pdfUrl: filePdf.getUrl()
   };
 }
@@ -1915,7 +1867,7 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.12.0" });
+      return out({ ok: true, versione: "4.13.0" });
     }
 
     if (body.action === "usage"){

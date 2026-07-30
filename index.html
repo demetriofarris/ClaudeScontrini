@@ -237,7 +237,7 @@
       <button class="tile" id="btnVaiStat"><span class="tile-icona">📈</span>Statistiche</button>
       <button class="tile" id="btnVaiImpostazioni"><span class="tile-icona">⚙️</span>Impostazioni</button>
     </div>
-    <input id="inputFoto" class="nascosto" type="file" accept="image/*">
+    <input id="inputFoto" class="nascosto" type="file" accept="image/*,application/pdf">
     <input id="inputPdf" class="nascosto" type="file" accept="application/pdf">
   </section>
 
@@ -497,7 +497,7 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.12.0",
+  versione: "4.13.0",
   data: "30/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
@@ -875,10 +875,10 @@ $("inputFoto").onchange = async (e) => {
   e.target.value = "";
   if (!file) return;
   try {
-    // I PDF si aggiungono SOLO dalla voce "Carica PDF": così nel recap finiscono
-    // e vengono elencati solo i documenti caricati di proposito da lì.
+    // un PDF scelto qui salta l'editor di scansione e usa il flusso PDF
+    // (comodo: la maggior parte degli scontrini arriva già in PDF dallo scanner)
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
-      alert("Per i PDF usa il pulsante “Carica PDF”. Qui carica solo foto dello scontrino.");
+      await gestisciPdf(file);
       return;
     }
     editor.canvasFull = await caricaImmagine(file);

@@ -2,6 +2,10 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.13.0 — 30/07/2026
+- **"Foto scontrino" riaccetta i PDF**: la maggior parte degli scontrini arriva già in PDF dallo scanner, quindi il pulsante "Foto scontrino" torna a gestire sia foto che PDF (come "Carica PDF").
+- **Report più pulito**: rimosso l'elenco "Documenti PDF allegati" in coda al report di chiusura mese (ridondante: gli scontrini PDF compaiono già come anteprima nel dettaglio) e le relative copie dei file su Drive.
+
 ## v4.12.0 — 30/07/2026
 - **Tasto "←" in alto**: in tutte le schermate diverse dalla Home compare un pulsante indietro nell'intestazione per tornare subito alla Home.
 - **File su Drive più robusti**: se una cartella dell'app viene eliminata a mano, i nuovi file non finiscono più sparsi nel Drive — vengono ricreati sempre dentro l'unica cartella **ClaudeScontrini**.
