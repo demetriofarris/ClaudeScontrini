@@ -2,6 +2,12 @@
 
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
+## v4.12.0 — 30/07/2026
+- **Tasto "←" in alto**: in tutte le schermate diverse dalla Home compare un pulsante indietro nell'intestazione per tornare subito alla Home.
+- **File su Drive più robusti**: se una cartella dell'app viene eliminata a mano, i nuovi file non finiscono più sparsi nel Drive — vengono ricreati sempre dentro l'unica cartella **ClaudeScontrini**.
+- **PDF solo da "Carica PDF"**: il pulsante "Foto scontrino" ora accetta solo immagini; così nel report di chiusura mese finiscono ed elencati **solo** i PDF aggiunti di proposito dalla voce "Carica PDF".
+- **Provincia nello scontrino**: l'AI ricava la sigla della **provincia** (es. RM, MI) dall'indirizzo, modificabile nel form, e compare nel **report di chiusura mese** (colonna PR e nel dettaglio).
+
 ## v4.11.0 — 23/07/2026
 - **Credito API a saldo**: la card in Impostazioni ora mostra un **credito residuo persistente** (non si azzera più a fine mese) che scende a ogni scansione. Nuovi pulsanti **Ricarica** (importo a scelta) e **+ $5** per aggiungere credito quando ricarichi su Anthropic. La barra diventa **rossa** quando il credito è quasi finito. Resta lo **storico del consumo mensile**. Tutti i valori sono comunque una **stima** dai token, non l'importo fatturato.
 - **PDF di chiusura mese**: ripristinato **1 scontrino per pagina** (ricevuta e POS grandi, orizzontale) — la versione a 2 per pagina rendeva le immagini poco leggibili.

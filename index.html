@@ -27,7 +27,9 @@
     display:flex; align-items:center; justify-content:space-between;
     position:sticky; top:0; z-index:10;
   }
+  .hdr-left{ display:flex; align-items:center; gap:4px; }
   header h1{ font-size:1.15rem; font-weight:600; cursor:pointer; }
+  #btnBack{ font-size:1.4rem; line-height:1; padding:4px 6px; }
   header button{
     background:none; border:none; color:#fff; font-size:1.3rem; cursor:pointer; padding:4px 8px;
   }
@@ -180,7 +182,10 @@
 <body>
 
 <header>
-  <h1 id="btnHome">📋 Scontrini</h1>
+  <div class="hdr-left">
+    <button id="btnBack" class="nascosto" title="Torna alla Home" aria-label="Torna alla Home">←</button>
+    <h1 id="btnHome">📋 Scontrini</h1>
+  </div>
   <button id="btnImpostazioni" title="Impostazioni">⚙️</button>
 </header>
 
@@ -232,7 +237,7 @@
       <button class="tile" id="btnVaiStat"><span class="tile-icona">📈</span>Statistiche</button>
       <button class="tile" id="btnVaiImpostazioni"><span class="tile-icona">⚙️</span>Impostazioni</button>
     </div>
-    <input id="inputFoto" class="nascosto" type="file" accept="image/*,application/pdf">
+    <input id="inputFoto" class="nascosto" type="file" accept="image/*">
     <input id="inputPdf" class="nascosto" type="file" accept="application/pdf">
   </section>
 
@@ -285,13 +290,21 @@
     <label>Negozio</label>
     <input id="fNegozio" type="text" placeholder="Nome esercizio">
 
-    <label>Categoria</label>
-    <select id="fCategoria">
-      <option>Ristoranti</option>
-      <option>Trasporti</option>
-      <option>Pernottamenti</option>
-      <option selected>Altro</option>
-    </select>
+    <div class="riga-doppia">
+      <div style="flex:2">
+        <label>Categoria</label>
+        <select id="fCategoria">
+          <option>Ristoranti</option>
+          <option>Trasporti</option>
+          <option>Pernottamenti</option>
+          <option selected>Altro</option>
+        </select>
+      </div>
+      <div style="flex:1">
+        <label>Provincia</label>
+        <input id="fProvincia" type="text" maxlength="2" autocapitalize="characters" style="text-transform:uppercase" placeholder="RM">
+      </div>
+    </div>
 
     <div class="riga-doppia">
       <div>
@@ -484,8 +497,8 @@ const cfg = {
 
 // ---------- versione app ----------
 const APP = {
-  versione: "4.11.0",
-  data: "23/07/2026",
+  versione: "4.12.0",
+  data: "30/07/2026",
   changelog: "https://github.com/demetriofarris/ClaudeScontrini/blob/main/CHANGELOG.md"
 };
 
@@ -514,6 +527,8 @@ const $ = (id) => document.getElementById(id);
 const viste = ["vistaHome", "vistaEditor", "vistaAnalisi", "vistaForm", "vistaModifica", "vistaElenco", "vistaCerca", "vistaMese", "vistaStatistiche", "vistaImpostazioni"];
 function mostra(vista){
   viste.forEach(v => $(v).classList.toggle("nascosto", v !== vista));
+  // tasto "←" in alto: visibile in tutte le sotto-viste, nascosto sulla Home
+  $("btnBack").classList.toggle("nascosto", vista === "vistaHome");
 }
 
 // ---------- chiamate API ----------
@@ -860,9 +875,10 @@ $("inputFoto").onchange = async (e) => {
   e.target.value = "";
   if (!file) return;
   try {
-    // un PDF scelto qui salta l'editor di scansione e usa il flusso PDF
+    // I PDF si aggiungono SOLO dalla voce "Carica PDF": così nel recap finiscono
+    // e vengono elencati solo i documenti caricati di proposito da lì.
     if (file.type === "application/pdf" || /\.pdf$/i.test(file.name)){
-      await gestisciPdf(file);
+      alert("Per i PDF usa il pulsante “Carica PDF”. Qui carica solo foto dello scontrino.");
       return;
     }
     editor.canvasFull = await caricaImmagine(file);
@@ -952,6 +968,7 @@ function preparaForm(dati){
   controllaDataAnomala($("fData").value, "fDataHint");
   $("fTotale").value = dati?.totale || "";
   $("fNegozio").value = dati?.negozio || "";
+  $("fProvincia").value = dati?.provincia || "";
   $("fCategoria").value = dati?.categoria || "Altro";
   $("fOspInt").value = "";
   $("fOspEst").value = "";
@@ -1006,6 +1023,7 @@ $("btnSalva").onclick = async () => {
       data: $("fData").value,
       totale: $("fTotale").value,
       negozio: $("fNegozio").value,
+      provincia: $("fProvincia").value,
       categoria: $("fCategoria").value,
       ospitiInterni: $("fOspInt").value,
       ospitiEsterni: $("fOspEst").value,
@@ -1546,6 +1564,7 @@ async function caricaStatistiche(){
 
 // ---------- impostazioni ----------
 $("btnHome").onclick = () => mostra("vistaHome");
+$("btnBack").onclick = () => mostra("vistaHome");
 function apriImpostazioni(){
   $("cfgUrl").value = cfg.url;
   $("cfgToken").value = cfg.token;

@@ -141,7 +141,7 @@ function getFoglioSpese_() {
 // ============================================================================
 
 const HEADERS_V4 = [
-  "Data", "Totale", "Negozio", "Categoria",
+  "Data", "Totale", "Negozio", "Provincia", "Categoria",
   "Foto", "FotoBancomat", "PDF", "Testo_scontrino",
   "Ospiti_Interni", "Ospiti_Esterni", "Note", "Alert_Data", "ID"
 ];
@@ -438,35 +438,69 @@ function formatEuro(n){
   return "€ " + (neg ? "-" : "") + intero + "," + parti[1];
 }
 
-// Cerca una cartella per nome usando la cache degli ID in Script Properties
-// (evita match sbagliati con cartelle omonime condivise e ricerche lente)
+// Cartella padre unica "ClaudeScontrini": tutte le cartelle dell'app vivono
+// QUI dentro. Cache dell'ID in Script Property; se la cartella è stata
+// cestinata/eliminata la si ricrea. Evita che i file finiscano sparsi nella
+// root di Drive quando una cartella viene cancellata a mano.
+function _getRootFolder_(){
+  const props = PropertiesService.getScriptProperties();
+  const key = "FOLDER_ID_ROOT_CLAUDESCONTRINI";
+  const id = props.getProperty(key);
+  if (id){
+    try { const f = DriveApp.getFolderById(id); if (!f.isTrashed()) return f; } catch(e){}
+  }
+  const it = DriveApp.getFoldersByName("ClaudeScontrini");
+  while (it.hasNext()){
+    const f = it.next();
+    if (!f.isTrashed()){ props.setProperty(key, f.getId()); return f; }
+  }
+  const f = DriveApp.createFolder("ClaudeScontrini");
+  props.setProperty(key, f.getId());
+  return f;
+}
+
+// True se la cartella referenziata dall'ID esiste ancora ed è valida (non nel
+// cestino). getFolderById restituisce anche le cartelle cestinate, quindi il
+// controllo isTrashed è indispensabile.
+function _cartellaValida_(f){
+  try { return f && !f.isTrashed(); } catch(e){ return false; }
+}
+
+// Cerca una cartella (per nome) DENTRO la cartella padre unica, usando la cache
+// degli ID. Ritorna null se non esiste (non la crea): per i percorsi di lettura.
 function getFolderCached(name){
   const props = PropertiesService.getScriptProperties();
   const key = "FOLDER_ID_" + name;
   const id = props.getProperty(key);
   if (id){
-    try { return DriveApp.getFolderById(id); } catch(e) { /* ID non più valido, rifai la ricerca */ }
+    try { const f = DriveApp.getFolderById(id); if (_cartellaValida_(f)) return f; } catch(e){ /* ID non più valido */ }
   }
-  const it = DriveApp.getFoldersByName(name);
-  if (it.hasNext()){
+  const root = _getRootFolder_();
+  const it = root.getFoldersByName(name);
+  while (it.hasNext()){
     const f = it.next();
-    props.setProperty(key, f.getId());
-    return f;
+    if (_cartellaValida_(f)){ props.setProperty(key, f.getId()); return f; }
   }
   return null;
 }
 
+// Come getFolderCached ma la CREA dentro la cartella padre se manca (percorsi di
+// scrittura). Non usa mai DriveApp.createFolder (che la piazzerebbe nella root).
 function getOrCreateFolder(name){
   const found = getFolderCached(name);
   if (found) return found;
-  const f = DriveApp.createFolder(name);
+  const f = _getRootFolder_().createFolder(name);
   PropertiesService.getScriptProperties().setProperty("FOLDER_ID_" + name, f.getId());
   return f;
 }
 
 function getOrCreateSubfolder(parent, name){
   const it = parent.getFoldersByName(name);
-  return it.hasNext() ? it.next() : parent.createFolder(name);
+  while (it.hasNext()){
+    const f = it.next();
+    if (_cartellaValida_(f)) return f;
+  }
+  return parent.createFolder(name);
 }
 
 function trovaFile(nome, folder1, folder2){
@@ -502,16 +536,21 @@ function _conLockScrittura(fn){
   finally { lock.releaseLock(); }
 }
 
-// Garantisce la colonna "ID" nel foglio (la crea in coda se manca).
+// Garantisce che una colonna esista nel foglio (la crea in coda se manca).
 // Restituisce le intestazioni aggiornate.
-function _assicuraColonnaID_(sh){
+function _assicuraColonna_(sh, nome){
   let headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
-  if (!_findCol(headers, ["ID"])){
+  if (!_findCol(headers, [nome])){
     const nuovaCol = sh.getLastColumn() + 1;
-    sh.getRange(1, nuovaCol).setValue("ID").setFontWeight("bold");
+    sh.getRange(1, nuovaCol).setValue(nome).setFontWeight("bold");
     headers = sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0];
   }
   return headers;
+}
+
+// Garantisce la colonna "ID" (chiave di riga). Restituisce le intestazioni.
+function _assicuraColonnaID_(sh){
+  return _assicuraColonna_(sh, "ID");
 }
 
 // Numero di riga della spesa con quell'ID univoco (0 se non trovata / no colonna).
@@ -603,10 +642,11 @@ function estraiDatiConClaude(imageBlob){
       data:      { type: "string", description: "Data dello scontrino in formato GG/MM/AAAA. Stringa vuota se non leggibile." },
       totale:    { type: "string", description: "Importo TOTALE pagato, formato '€ 12,34' con la virgola come separatore decimale. Stringa vuota se non leggibile." },
       negozio:   { type: "string", description: "Nome dell'esercizio commerciale. Stringa vuota se non leggibile." },
+      provincia: { type: "string", description: "Sigla della provincia italiana (2 lettere maiuscole, es. RM, MI, TO) ricavata dall'indirizzo/città dell'esercizio. Stringa vuota se non ricavabile con certezza." },
       categoria: { type: "string", enum: ["Ristoranti", "Trasporti", "Pernottamenti", "Altro"] },
       testo:     { type: "string", description: "Trascrizione integrale del testo leggibile dello scontrino." }
     },
-    required: ["data", "totale", "negozio", "categoria", "testo"],
+    required: ["data", "totale", "negozio", "provincia", "categoria", "testo"],
     additionalProperties: false
   };
 
@@ -625,6 +665,8 @@ function estraiDatiConClaude(imageBlob){
                 "(riga TOTALE / TOTALE COMPLESSIVO / IMPORTO PAGATO), non un subtotale. " +
                 "Per la categoria: ristoranti/bar/caffè → Ristoranti; taxi/treni/bus/parcheggi/carburante → Trasporti; " +
                 "hotel/B&B → Pernottamenti; tutto il resto → Altro. " +
+                "Per la provincia: ricava la sigla a 2 lettere (es. RM, MI) dall'indirizzo o dalla città " +
+                "dell'esercizio stampati sullo scontrino; se non sono presenti o la città è ambigua, lascia vuoto. " +
                 "Oggi è " + oggi + ": la data dello scontrino è quella di emissione/pagamento ed è di norma " +
                 "vicina a oggi. Leggi l'anno con attenzione e, se non è chiaramente leggibile, usa l'anno corrente; " +
                 "non inserire un anno passato se il documento sembra recente. Se l'anno che leggi dista più di un " +
@@ -753,10 +795,14 @@ function validaDatiEstratti(dati){
   const categorieValide = ["Ristoranti", "Trasporti", "Pernottamenti", "Altro"];
   const categoria = categorieValide.indexOf(dati.categoria) !== -1 ? dati.categoria : "Altro";
 
+  // Provincia: sigla a 2 lettere maiuscole, altrimenti stringa vuota
+  const provincia = String(dati.provincia || "").toUpperCase().replace(/[^A-Z]/g, "").substring(0, 2);
+
   return {
     data: data,
     totale: totale,
     negozio: String(dati.negozio || "").trim(),
+    provincia: provincia.length === 2 ? provincia : "",
     categoria: categoria,
     testo: String(dati.testo || "").trim()
   };
@@ -940,6 +986,7 @@ function chiudiMeseManuale(anno, mese){
   const iData          = _findCol(headers,["Data"])-1,
         iTot           = _findCol(headers,["Totale","Importo"])-1,
         iNeg           = _findCol(headers,["Negozio","Fornitore"])-1,
+        iProv          = _findCol(headers,["Provincia"])-1,
         iCat           = _findCol(headers,["Categoria"])-1,
         iFoto          = _findCol(headers,["Foto","Image"])-1,
         iFotoBancomat  = _findCol(headers,["FotoBancomat","Foto Bancomat"])-1,
@@ -974,6 +1021,7 @@ function chiudiMeseManuale(anno, mese){
 
     const cat     = iCat>=0    ? (r[iCat]||"Altro") : "Altro";
     const negozio = iNeg>=0    ? (r[iNeg]||"")       : "";
+    const provincia = iProv>=0 ? String(r[iProv]||"").toUpperCase().trim() : "";
     const ospInt  = iOspInt>=0 ? String(r[iOspInt]||"").trim() : "";
     const ospEst  = iOspEst>=0 ? String(r[iOspEst]||"").trim() : "";
     const note    = iNote>=0   ? String(r[iNote]||"").trim()   : "";
@@ -1005,6 +1053,7 @@ function chiudiMeseManuale(anno, mese){
       data: dataVis,
       dataObj: d,
       negozio: negozio,
+      provincia: provincia,
       categoria: cat,
       importo: num,
       fileImg: fileImg,
@@ -1094,8 +1143,8 @@ function chiudiMeseManuale(anno, mese){
 
   // intestazione tabella (fascia navy, etichette maiuscole)
   const hr = tbl.appendTableRow();
-  [["N.", AC, 30], ["DATA", null, 78], ["NEGOZIO", null, null],
-   ["CATEGORIA", null, 115], ["IMPORTO", AR, 95]].forEach(([lab, al, w]) => {
+  [["N.", AC, 30], ["DATA", null, 78], ["NEGOZIO", null, null], ["PR", AC, 34],
+   ["CATEGORIA", null, 108], ["IMPORTO", AR, 92]].forEach(([lab, al, w]) => {
     const c = hr.appendTableCell();
     _cella(c, lab, { bold: true, size: 8.5, color: "#FFFFFF", align: al });
     _stileCella(c, { bg: PDF_STY.NAVY, width: w, pt: 5, pb: 5 });
@@ -1109,6 +1158,7 @@ function chiudiMeseManuale(anno, mese){
       { t: idx+1,               align: AC, color: PDF_STY.GRIGIO },
       { t: v.data },
       { t: v.negozio || "—" },
+      { t: v.provincia || "",   align: AC, color: PDF_STY.GRIGIO },
       { t: v.categoria,         color: PDF_STY.GRIGIO },
       { t: formatEuro(v.importo), align: AR }
     ];
@@ -1121,9 +1171,9 @@ function chiudiMeseManuale(anno, mese){
 
   // riga TOTALE (fascia grigio chiara, nessun blocco verde)
   const rTot = tbl.appendTableRow();
-  ["", "", "", "TOTALE", formatEuro(tot)].forEach((t, i) => {
+  ["", "", "", "", "TOTALE", formatEuro(tot)].forEach((t, i) => {
     const c = rTot.appendTableCell();
-    _cella(c, t, { bold: i >= 3, size: 9.5, align: AR, color: PDF_STY.NAVY });
+    _cella(c, t, { bold: i >= 4, size: 9.5, align: AR, color: PDF_STY.NAVY });
     _stileCella(c, { bg: PDF_STY.TOTALE, pt: 7, pb: 7 });
   });
 
@@ -1145,7 +1195,7 @@ function chiudiMeseManuale(anno, mese){
     if (idx > 0) body.appendPageBreak();   // uno scontrino per pagina (ricevuta | POS grandi)
 
     // Intestazione voce
-    const intestazione = body.appendParagraph(`${idx+1}.   ${v.data}   —   ${v.negozio}`);
+    const intestazione = body.appendParagraph(`${idx+1}.   ${v.data}   —   ${v.negozio}${v.provincia ? " (" + v.provincia + ")" : ""}`);
     intestazione.setFontFamily(PDF_STY.SANS).setBold(true).setFontSize(12)
       .setSpacingBefore(4).setSpacingAfter(1);
     intestazione.editAsText().setForegroundColor(PDF_STY.NAVY);
@@ -1377,6 +1427,7 @@ function cercaSpese(p){
   const iData = _findCol(headers, ["Data"]) - 1,
         iTot  = _findCol(headers, ["Totale"]) - 1,
         iNeg  = _findCol(headers, ["Negozio"]) - 1,
+        iProv = _findCol(headers, ["Provincia"]) - 1,
         iCat  = _findCol(headers, ["Categoria"]) - 1,
         iNote = _findCol(headers, ["Note"]) - 1,
         iOspInt = _findCol(headers, ["Ospiti_Interni"]) - 1,
@@ -1424,6 +1475,7 @@ function cercaSpese(p){
       data: d ? Utilities.formatDate(d, tz, "dd/MM/yyyy") : String(r[iData] || ""),
       totale: formatEuro(parseImporto(iTot >= 0 ? r[iTot] : 0)),
       negozio: iNeg >= 0 ? String(r[iNeg] || "") : "",
+      provincia: iProv >= 0 ? String(r[iProv] || "") : "",
       categoria: iCat >= 0 ? String(r[iCat] || "") : "",
       ospitiInterni: iOspInt >= 0 ? String(r[iOspInt] || "") : "",
       ospitiEsterni: iOspEst >= 0 ? String(r[iOspEst] || "") : "",
@@ -1515,7 +1567,8 @@ function _cercaDuplicato_(sh, headers, p){
 
 function salvaSpesa(p){
   const sh = getFoglioSpese_();
-  const headers = _assicuraColonnaID_(sh);  // garantisce la colonna ID
+  _assicuraColonnaID_(sh);                          // garantisce la colonna ID
+  const headers = _assicuraColonna_(sh, "Provincia"); // e la colonna Provincia
 
   // Meglio un errore chiaro che una riga salvata vuota: se le intestazioni non
   // sono leggibili, tutti i setCol scarterebbero i valori in silenzio
@@ -1576,6 +1629,7 @@ function salvaSpesa(p){
   setCol(["Data"], dataObj || String(p.data || "").trim());
   setCol(["Totale"], String(p.totale || "").trim());
   setCol(["Negozio"], String(p.negozio || "").trim());
+  setCol(["Provincia"], String(p.provincia || "").toUpperCase().trim());
   setCol(["Categoria"], String(p.categoria || "").trim());
   setCol(["Ospiti_Interni"], String(p.ospitiInterni || "").trim());
   setCol(["Ospiti_Esterni"], String(p.ospitiEsterni || "").trim());
@@ -1699,6 +1753,7 @@ function aggiornaSpesa(p){
   [
     [["Totale"], p.totale],
     [["Negozio"], p.negozio],
+    [["Provincia"], p.provincia !== undefined ? String(p.provincia).toUpperCase() : undefined],
     [["Categoria"], p.categoria],
     [["Ospiti_Interni"], p.ospitiInterni],
     [["Ospiti_Esterni"], p.ospitiEsterni],
@@ -1860,7 +1915,7 @@ function doPost(e){
     }
 
     if (body.action === "ping"){
-      return out({ ok: true, versione: "4.11.0" });
+      return out({ ok: true, versione: "4.12.0" });
     }
 
     if (body.action === "usage"){
