@@ -1425,27 +1425,59 @@ function popolaSelettoriMese(){
   aSel.value = yDef;
 }
 
+function mostraLinkPdf(esito, url){
+  const a = document.createElement("a");
+  a.href = url;
+  a.target = "_blank";
+  a.rel = "noopener";
+  a.textContent = "📄 Apri il PDF";
+  a.style.cssText = "display:block;margin-top:8px;color:var(--verde);font-weight:700";
+  esito.appendChild(a);
+}
+
+// Cerca il PDF del periodo nell'archivio riepiloghi, riprovando a intervalli.
+// Serve a recuperare il report quando chiudi_mese va in timeout lato client ma
+// il server lo genera comunque.
+async function attendiRiepilogo(periodo, tentativi, intervalloMs){
+  for (let i = 0; i < tentativi; i++){
+    await new Promise(res => setTimeout(res, intervalloMs));
+    try {
+      const r = await api({ action: "riepiloghi" });
+      if (r && r.ok && r.riepiloghi){
+        const rp = r.riepiloghi.find(x => x.periodo === periodo);
+        if (rp && rp.url) return rp.url;
+      }
+    } catch(e){ /* offline momentaneo: riprovo */ }
+  }
+  return null;
+}
+
 $("btnChiudiMese").onclick = async () => {
   const btn = $("btnChiudiMese");
   const esito = $("meseEsito");
+  const anno = $("annoSel").value, mese = $("meseSel").value;
+  const periodo = anno + "-" + String(mese).padStart(2, "0");
   btn.disabled = true;
   esito.innerHTML = '<span class="spinner-mini"></span> Generazione in corso, attendi…';
   try {
-    const r = await api({ action: "chiudi_mese", anno: $("annoSel").value, mese: $("meseSel").value });
+    const r = await api({ action: "chiudi_mese", anno, mese });
     if (!r.ok) throw new Error(r.errore || "Generazione fallita");
     esito.textContent = r.messaggio;
-    if (r.pdfUrl){
-      const a = document.createElement("a");
-      a.href = r.pdfUrl;
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.textContent = "📄 Apri il PDF";
-      a.style.cssText = "display:block;margin-top:8px;color:var(--verde);font-weight:700";
-      esito.appendChild(a);
-    }
+    if (r.pdfUrl) mostraLinkPdf(esito, r.pdfUrl);
     caricaRiepiloghi();
   } catch (err) {
-    esito.textContent = "❌ " + err.message;
+    // "Failed to fetch" = timeout di rete: il PDF è pesante (tante anteprime) e
+    // il browser molla prima che il server risponda, ma il server COMPLETA lo
+    // stesso. Attendo e recupero il report dall'archivio invece di dare errore.
+    esito.innerHTML = '<span class="spinner-mini"></span> Il server sta ancora generando il PDF (può richiedere 1–2 minuti)…';
+    const url = await attendiRiepilogo(periodo, 10, 15000);  // ~2,5 min
+    if (url){
+      esito.textContent = "✅ Report " + periodo + " pronto";
+      mostraLinkPdf(esito, url);
+    } else {
+      esito.textContent = "⚠️ Sta impiegando più del previsto. Il report sarà nell'archivio qui sotto tra poco: riapri questa schermata per aggiornarlo.";
+    }
+    caricaRiepiloghi();
   } finally {
     btn.disabled = false;
   }
