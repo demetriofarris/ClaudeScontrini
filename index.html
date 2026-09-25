@@ -532,13 +532,32 @@ function mostra(vista){
 }
 
 // ---------- chiamate API ----------
-// POST senza Content-Type custom: evita il preflight CORS (pattern Apps Script)
+// POST senza Content-Type custom: evita il preflight CORS (pattern Apps Script).
+// Su rete mobile instabile Apps Script restituisce spesso 404/5xx transitori o
+// "Failed to fetch": le azioni SENZA effetti collaterali si ritentano in
+// automatico con backoff. Quelle che scrivono o consumano credito (salva,
+// aggiorna, elimina, analizza, chiudi_mese, ricarica) NON si ritentano, per non
+// duplicarne l'effetto (una scrittura potrebbe essere già andata a buon fine).
+const AZIONI_RIPETIBILI = ["ping", "cerca", "riepiloghi", "allegati", "usage"];
 async function api(body){
   if (!cfg.url) throw new Error("Configura prima l'URL nelle impostazioni ⚙️");
   body.token = cfg.token;
-  const resp = await fetch(cfg.url, { method: "POST", body: JSON.stringify(body) });
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
-  return resp.json();
+  const tentativi = AZIONI_RIPETIBILI.includes(body.action) ? 3 : 1;
+  const transitori = [404, 408, 425, 429, 500, 502, 503, 504];
+  let ultimoErr;
+  for (let i = 0; i < tentativi; i++){
+    try {
+      const resp = await fetch(cfg.url, { method: "POST", body: JSON.stringify(body) });
+      if (resp.ok) return await resp.json();
+      if (!transitori.includes(resp.status)) throw new Error("HTTP " + resp.status);
+      ultimoErr = new Error("HTTP " + resp.status);   // status transitorio: ritento
+    } catch(e){
+      if (!(e instanceof TypeError)) throw e;          // non è errore di rete: propago
+      ultimoErr = e;                                   // "Failed to fetch": ritento
+    }
+    if (i < tentativi - 1) await new Promise(r => setTimeout(r, 500 * (i + 1) * (i + 1)));
+  }
+  throw ultimoErr;
 }
 
 // ---------- caricamento e ridimensionamento immagini ----------

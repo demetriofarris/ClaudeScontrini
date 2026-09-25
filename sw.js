@@ -1,4 +1,4 @@
-const CACHE = "scontrini-v24";
+const CACHE = "scontrini-v25";
 const SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", (e) => {
@@ -23,6 +23,10 @@ self.addEventListener("fetch", (e) => {
   if (e.request.mode === "navigate"){
     e.respondWith(
       fetch(e.request, { cache: "no-cache" }).then((r) => {
+        // Un 404/5xx transitorio (rete debole o deploy GitHub Pages in corso)
+        // NON deve essere cachato né servito come pagina: altrimenti resta
+        // "incollato" e l'app mostra un 404 al caricamento. Ripiega sulla cache.
+        if (!r.ok) throw new Error("HTTP " + r.status);
         const copia = r.clone();
         caches.open(CACHE).then((c) => c.put("./index.html", copia));
         return r;

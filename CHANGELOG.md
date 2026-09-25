@@ -3,6 +3,7 @@
 Tutte le modifiche rilevanti dell'app. Le date sono in formato GG/MM/AAAA.
 
 ## v4.13.0 — 30/07/2026
+- **Meno errori 404 su rete debole**: le operazioni di lettura (elenco, ricerca, allegati, riepiloghi) ora **riprovano automaticamente** se il server dà un errore momentaneo (tipico su rete mobile). Corretto anche un difetto per cui un errore momentaneo al caricamento poteva restare "bloccato" e mostrare un 404 all'apertura dell'app.
 - **Chiusura mese resiliente al timeout**: se la generazione del PDF è lunga e la chiamata va in "failed to fetch", l'app non dà più errore ma **attende e recupera il report dall'archivio** (il server lo genera comunque). Niente più falsi allarmi di "report non generato".
 - **"Foto scontrino" riaccetta i PDF**: la maggior parte degli scontrini arriva già in PDF dallo scanner, quindi il pulsante "Foto scontrino" torna a gestire sia foto che PDF (come "Carica PDF").
 - **Report più pulito**: rimosso l'elenco "Documenti PDF allegati" in coda al report di chiusura mese (ridondante: gli scontrini PDF compaiono già come anteprima nel dettaglio) e le relative copie dei file su Drive.
